@@ -1,29 +1,141 @@
 {
-  "generated_at": "2026-01-01T18:04:33.944343+00:00",
-  "analysis_reference": "analysis_output.json",
-  "phase2_enabled": true,
-  "llm_mode": "local",
-  "llm_model": "llama3:8b",
-  "insights": {
-    "cluster_summary": "The cluster has a single node, with no deployments or HPAs. This suggests an initial setup or testing phase.",
-    "patterns": [
-      {
-        "pattern_id": "SingleNodePattern",
-        "description": "A single node with no deployments or HPAs",
-        "affected_objects": [
-          "demo-control-plane"
-        ],
-        "evidence": [
-          "Node demo-control-plane has 20.0 pods scheduled"
-        ]
-      }
-    ],
-    "warnings": [],
-    "action_candidates": [],
-    "priorities": "",
-    "limitations": [
-      "Insufficient data for deployment and HPA analysis",
-      "Confidence in node analysis is High"
-    ]
-  }
+  "cluster_summary": "The cluster is generally healthy with all nodes ready, no pending pods, and stable scheduling. Resource usage shows a mix of bursty, underutilized, and memory-saturated workloads, with HPAs functioning as expected. No immediate availability risks are observed, but efficiency and memory risk require attention.",
+  "patterns": [
+    {
+      "pattern_id": "PATTERN-BURSTY-CPU",
+      "description": "One deployment shows significant CPU burstiness with high tail latency compared to average usage.",
+      "affected_objects": [
+        "api-server"
+      ],
+      "evidence": [
+        "behavior_flags include BURSTY and CPU_BURSTY",
+        "CPU avg 0.45 cores vs P99 2.1 cores",
+        "HPA scaling_status CAUTION with AT_CPU_THRESHOLD flag"
+      ]
+    },
+    {
+      "pattern_id": "PATTERN-UNDERUTILIZED-FRONTEND",
+      "description": "A frontend deployment is consistently underutilizing allocated CPU and memory across replicas.",
+      "affected_objects": [
+        "web-frontend"
+      ],
+      "evidence": [
+        "CPU utilization percent 32%",
+        "Memory utilization percent 50%",
+        "behavior_flags include UNDERUTILIZED",
+        "HPA desired_replicas lower than current_replicas"
+      ]
+    },
+    {
+      "pattern_id": "PATTERN-MEMORY-SATURATION",
+      "description": "A batch workload is consistently operating at full memory allocation, limiting scaling flexibility.",
+      "affected_objects": [
+        "background-worker",
+        "node-1",
+        "node-2"
+      ],
+      "evidence": [
+        "Memory utilization percent 100%",
+        "max memory usage equals allocation (2Gi)",
+        "unsafe_to_resize is true"
+      ]
+    },
+    {
+      "pattern_id": "PATTERN-NODE-FRAGMENTATION",
+      "description": "Both nodes show moderate CPU and memory fragmentation, reducing packing efficiency.",
+      "affected_objects": [
+        "node-1",
+        "node-2"
+      ],
+      "evidence": [
+        "pod_packing_efficiency below 0.8 on both nodes",
+        "cpu_fragmentation 0.45 and 0.52",
+        "memory_fragmentation 0.34 and 0.42"
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "warning_id": "WARN-MEMORY-BACKGROUND",
+      "severity": "High",
+      "scope": "Deployment",
+      "description": "The background-worker is fully consuming its allocated memory, increasing the risk of OOM events and limiting recovery options.",
+      "evidence": [
+        "memory_utilization_percent 100%",
+        "unsafe_to_resize true",
+        "p99 memory close to max allocation"
+      ],
+      "confidence": "High"
+    },
+    {
+      "warning_id": "WARN-API-BURST",
+      "severity": "Medium",
+      "scope": "Deployment",
+      "description": "CPU and memory burstiness in the API server may trigger scaling events or transient latency under load spikes.",
+      "evidence": [
+        "CPU P99 2.1 cores vs avg 0.45",
+        "memory_utilization_percent 102%",
+        "HPA scaling_status CAUTION"
+      ],
+      "confidence": "High"
+    },
+    {
+      "warning_id": "WARN-OVERPROVISION-FRONTEND",
+      "severity": "Low",
+      "scope": "Deployment",
+      "description": "The web-frontend is overprovisioned relative to observed load, leading to inefficient resource usage.",
+      "evidence": [
+        "CPU utilization percent 32%",
+        "HPA SCALING_DOWN_PENDING flag",
+        "current replicas higher than desired replicas"
+      ],
+      "confidence": "High"
+    }
+  ],
+  "action_candidates": [
+    {
+      "action_id": "ACT-REVIEW-BACKGROUND-MEMORY",
+      "scope": "Deployment",
+      "description": "Review application-level memory behavior of the background-worker to understand sustained high memory usage.",
+      "expected_impact": "Improved understanding of memory pressure and reduced risk of unexpected OOM events.",
+      "prerequisites": [
+        "Application owners available for review",
+        "Access to application logs and profiling data"
+      ],
+      "blocked_by": [
+        "unsafe_to_resize flag on background-worker"
+      ],
+      "confidence": "High"
+    },
+    {
+      "action_id": "ACT-OBSERVE-API-HPA",
+      "scope": "HPA",
+      "description": "Closely observe API server HPA behavior during peak periods to validate responsiveness to CPU bursts.",
+      "expected_impact": "Reduced uncertainty around scaling responsiveness during traffic spikes.",
+      "prerequisites": [
+        "Sustained traffic patterns observed",
+        "Existing HPA metrics remain stable"
+      ],
+      "blocked_by": [],
+      "confidence": "Medium"
+    },
+    {
+      "action_id": "ACT-REVIEW-FRONTEND-DOWNSCALE",
+      "scope": "Deployment",
+      "description": "Review and approve the pending downscale suggested by the web-frontend HPA.",
+      "expected_impact": "Lower baseline resource consumption and improved node packing efficiency.",
+      "prerequisites": [
+        "Confirmation that current traffic levels are representative",
+        "No upcoming traffic spikes expected"
+      ],
+      "blocked_by": [],
+      "confidence": "High"
+    }
+  ],
+  "priorities": "Highest priority is addressing memory saturation in the background-worker due to its high risk and lack of scaling flexibility. Medium priority is monitoring the bursty API server to ensure stability under load. Lower priority is efficiency improvement by reviewing the web-frontend downscale.",
+  "limitations": [
+    "Analysis is limited to metrics and flags provided by Phase-1; no application-level context is included.",
+    "No historical trend duration beyond provided percentiles is available.",
+    "Node analysis indicates no insufficient_data flags, but workload-to-node placement dynamics over time are not visible."
+  ]
 }
