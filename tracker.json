@@ -18,5 +18,28 @@
     ],
     "change_type": "presentation",
     "description": "Phase 3 Web UI complete redesign: Changed port from 5000 to 8080. Redesigned dashboard with comprehensive 3-tab interface. TAB 1 (Facts & Evidence): 6 sections - Cluster Overview, Cluster Patterns, Deployments Table, Deployment Details (drill-down), HPA Analysis, Node Pools. TAB 2 (Insights LLM): 6 sections - Cluster Summary, Patterns Detected, Warnings, Action Candidates, Prioritization, Limitations. TAB 3 (Raw JSON): Toggle buttons for analysis_output.json and insights_output.json. Design principle: Phase 1 shows the truth (facts), Phase 2 explains the truth (insights), UI never mixes them. All sections follow strict separation with color-coded badges, tables, drill-downs, and responsive layout."
+  },
+  {
+    "timestamp": "2026-01-01T18:05:27.300095Z",
+    "files_modified": [
+      "metrics/discovery.py",
+      "analysis/deployment_analysis.py",
+      "analysis/hpa_analysis.py",
+      "analysis/node_analysis.py",
+      "orchestrator.py"
+    ],
+    "change_type": "phase1_enhancement",
+    "description": "Complete Phase 1 analysis implementation with rich metrics, flags, and edge case detection"
+  },
+  {
+    "timestamp": "2026-01-01T18:05:27.300231Z",
+    "files_modified": [
+      "phase2/runner.py",
+      "phase2/llm_client.py",
+      "phase2/validator.py",
+      "phase2/__init__.py"
+    ],
+    "change_type": "phase2_implementation",
+    "description": "Complete Phase 2 LLM runner with Ollama/remote API support, atomic output, and flexible validation"
   }
 ]
