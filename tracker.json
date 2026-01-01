@@ -1,0 +1,53 @@
+[
+  {
+    "timestamp": "2025-01-23T15:30:00Z",
+    "files_modified": [
+      "phase2/validator.py",
+      "phase2/runner.py",
+      "tests/test_phase2.py"
+    ],
+    "change_type": "analysis",
+    "description": "Comprehensive Phase 2 validator rewrite: implemented 8 validation layers (structural, type, warnings, action_candidates, safety cross-checks with Phase 1). New schema enforces 6 required top-level keys (cluster_summary, patterns, warnings, action_candidates, priorities, limitations) with strict field validation. Safety layer prevents resize actions on unsafe deployments and requires limitations to reference insufficient_data from Phase 1. All 60 tests passing."
+  },
+  {
+    "timestamp": "2026-01-01T22:50:00Z",
+    "files_modified": [
+      "ui.py",
+      "templates/dashboard.html",
+      "requirements.txt"
+    ],
+    "change_type": "presentation",
+    "description": "Phase 3 Web UI complete redesign: Changed port from 5000 to 8080. Redesigned dashboard with comprehensive 3-tab interface. TAB 1 (Facts & Evidence): 6 sections - Cluster Overview, Cluster Patterns, Deployments Table, Deployment Details (drill-down), HPA Analysis, Node Pools. TAB 2 (Insights LLM): 6 sections - Cluster Summary, Patterns Detected, Warnings, Action Candidates, Prioritization, Limitations. TAB 3 (Raw JSON): Toggle buttons for analysis_output.json and insights_output.json. Design principle: Phase 1 shows the truth (facts), Phase 2 explains the truth (insights), UI never mixes them. All sections follow strict separation with color-coded badges, tables, drill-downs, and responsive layout."
+  },
+  {
+    "timestamp": "2026-01-01T23:15:00Z",
+    "files_modified": [
+      "templates/dashboard.html"
+    ],
+    "change_type": "presentation",
+    "description": "UI revert: Reverted to simple placeholder dashboard after encountering template data structure mismatches. Created minimal info page indicating UI under development. Phase 1 analysis and Phase 2 LLM pipeline remain fully functional. Placeholder provides instructions for running analysis and notes on data locations. Fresh UI redesign scheduled for next iteration with proper template structure verification."
+  },
+  {
+    "timestamp": "2026-01-01T23:30:00Z",
+    "files_modified": [
+      "config.py",
+      "orchestrator.py",
+      "ui.py",
+      "output/README.md",
+      "examples/README.md"
+    ],
+    "change_type": "config",
+    "description": "Output directory reorganization: Created output/ directory for all analysis and insights output files. Updated ANALYSIS_OUTPUT_PATH and INSIGHTS_OUTPUT_PATH in config.py to use output/ subdirectory. Modified orchestrator.py to auto-create output directory on write. Updated ui.py to load files from output/. Created examples/ directory with sample_analysis.json and sample_insights.json demonstrating output format. Added documentation (README.md) for both output/ and examples/ directories. Enables clean separation of generated files from source code."
+  },
+  {
+    "timestamp": "2026-01-02T00:15:00Z",
+    "files_modified": [
+      "config.py",
+      "requirements.txt",
+      "readme.md",
+      "tracker.json"
+    ],
+    "change_type": "config",
+    "description": "Phase 1 scope lock enforcement: Removed all Phase 2 and Phase 3 code per strict scope lock. Deleted phase2/ directory (validator.py, runner.py, llm_client.py) and phase3/ directory entirely. Removed Phase 2/3 test files (test_phase2.py, test_e2e.py, test_discovery.py, test_prometheus_client.py). Removed ui.py (Flask) and templates/ directory. Removed Flask and Jinja2 from requirements.txt. Cleaned config.py removing PHASE2_ENABLED, INSIGHTS_OUTPUT_PATH, LLM_* settings, and PHASE2_LLM_PROMPT. Completely rewrote readme.md as Phase-1-only documentation with architecture, configuration, testing, and extension guidance. Updated orchestrator.py comments and verified all 22 Phase 1 tests still passing. System now Phase 1 pure analysis only: deterministic facts and flags from Prometheus, no LLM, no UI, no suggestions."
+  }
+]
