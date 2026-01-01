@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""
+Phase 3: Web UI for Kubernetes Utilization Analysis
+Displays Phase 1 facts and Phase 2 LLM insights side-by-side
+"""
+import json
+import os
+from pathlib import Path
+from flask import Flask, render_template, jsonify
+from datetime import datetime
+
+app = Flask(__name__, template_folder='templates')
+
+# Configuration
+ANALYSIS_FILE = 'analysis_output.json'
+INSIGHTS_FILE = 'insights_output.json'
+
+
+def load_json(filepath):
+    """Load JSON file safely"""
+    try:
+        if not os.path.exists(filepath):
+            return None
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading {filepath}: {e}")
+        return None
+
+
+@app.route('/')
+def index():
+    """Main dashboard"""
+    analysis = load_json(ANALYSIS_FILE)
+    insights = load_json(INSIGHTS_FILE)
+    
+    if not analysis:
+        return render_template('error.html', 
+                             message="Phase 1 analysis not found. Run: python orchestrator.py")
+    
+    return render_template('dashboard.html',
+                         analysis=analysis,
+                         insights=insights,
+                         has_insights=insights is not None)
+
+
+@app.route('/api/analysis')
+def get_analysis():
+    """API endpoint for analysis data"""
+    data = load_json(ANALYSIS_FILE)
+    return jsonify(data) if data else jsonify({"error": "Not found"}), 404
+
+
+@app.route('/api/insights')
+def get_insights():
+    """API endpoint for insights data"""
+    data = load_json(INSIGHTS_FILE)
+    if not data:
+        return jsonify({"error": "Insights not available"}), 404
+    return jsonify(data)
+
+
+if __name__ == '__main__':
+    print("🎯 Kubernetes Utilization Analysis UI")
+    print("📊 Dashboard: http://127.0.0.1:8080")
+    print("🛑 Stop with: Ctrl+C")
+    app.run(debug=False, host='127.0.0.1', port=8080)
