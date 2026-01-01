@@ -1,496 +1,81 @@
 {
-  "generated_at": "2026-01-01T17:34:52.017352+00:00",
+  "generated_at": "2026-01-01T18:00:56.291217+00:00",
   "cluster_summary": {
-    "deployment_count": 9,
-    "hpa_count": 4,
-    "node_count": 0
+    "deployment_count": 0,
+    "hpa_count": 0,
+    "node_count": 1
   },
   "analysis_scope": {
-    "deployments": {
-      "namespace_allow": null,
-      "namespace_deny": null,
-      "deployment_regex": null,
-      "excluded_namespaces": [
-        "kube-system",
-        "kube-public",
-        "istio-system"
-      ]
-    },
+    "deployments": {},
     "hpas": {},
     "nodes": {}
   },
-  "deployment_analysis": [
+  "deployment_analysis": [],
+  "hpa_analysis": [],
+  "node_analysis": [
     {
-      "deployment": "api-a",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.2948926872535329,
-          "p95": 0.3000590723086112,
-          "p99": 0.30007107296088276,
-          "p100": 0.30008907393929013
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 18935808.0,
-          "p95": 18935808.0,
-          "p99": 18935808.0,
-          "p100": 18935808.0
+      "node": {
+        "name": "demo-control-plane",
+        "labels": {
+          "__name__": "node_uname_info",
+          "app_kubernetes_io_component": "metrics",
+          "app_kubernetes_io_instance": "prom",
+          "app_kubernetes_io_managed_by": "Helm",
+          "app_kubernetes_io_name": "prometheus-node-exporter",
+          "app_kubernetes_io_part_of": "prometheus-node-exporter",
+          "app_kubernetes_io_version": "1.10.2",
+          "domainname": "(none)",
+          "helm_sh_chart": "prometheus-node-exporter-4.49.2",
+          "instance": "172.18.0.2:9100",
+          "job": "kubernetes-service-endpoints",
+          "machine": "aarch64",
+          "namespace": "monitoring",
+          "node": "demo-control-plane",
+          "nodename": "demo-control-plane",
+          "release": "6.10.14-linuxkit",
+          "service": "prom-prometheus-node-exporter",
+          "sysname": "Linux",
+          "version": "#1 SMP Sat May 17 08:28:57 UTC 2025"
         }
       },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0000999857476334
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 0.0,
-        "memory_growth_trend": false
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "batch-a",
       "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.5923116322663302,
-          "p95": 0.6000799377140076,
-          "p99": 0.6001495558945545,
-          "p100": 0.600151051543069
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 14667776.0,
-          "p95": 14667776.0,
-          "p99": 14667776.0,
-          "p100": 14667776.0
-        }
+      "evidence": [
+        "Node demo-control-plane has 20.0 pods scheduled"
+      ],
+      "capacity_facts": {
+        "cpu_cores": null,
+        "memory_bytes": null,
+        "ephemeral_storage_bytes": null,
+        "pods_max": 110
       },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.00011850725977
+      "allocatable_facts": {
+        "cpu_allocatable": null,
+        "memory_allocatable": null,
+        "pods_allocatable": 110
       },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 0.0,
-        "memory_growth_trend": false
+      "request_facts": {
+        "cpu_requested_total": null,
+        "memory_requested_total": null,
+        "pods_requested_count": 20.0
       },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
+      "utilization_facts": {
+        "cpu_usage_cores": 0.12575745501334604,
+        "memory_available_bytes": null,
+        "pod_count": 20.0
       },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "local-path-provisioner",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 4.801088687683544e-05,
-          "p95": 5.6443841902179585e-05,
-          "p99": 5.7473647544722436e-05,
-          "p100": 5.747364754472244e-05
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 47985311.475409836,
-          "p95": 49942528.0,
-          "p99": 49942528.0,
-          "p100": 49942528.0
-        }
+      "fragmentation_analysis": {
+        "pod_packing_efficiency": null,
+        "memory_fragmentation": null,
+        "cpu_fragmentation": null
       },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.01824478291764
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 8.662329560645219,
-        "memory_growth_trend": false
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "prom-kube-state-metrics",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.0005012563688818217,
-          "p95": 0.0005457813021084224,
-          "p99": 0.0005503119755583287,
-          "p100": 0.0005503119755583288
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 69579020.59016393,
-          "p95": 71716864.0,
-          "p99": 71716864.0,
-          "p100": 71716864.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0083012617552192
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 6.41828238011305,
-        "memory_growth_trend": false
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "prom-prometheus-pushgateway",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 7.96437205697144e-05,
-          "p95": 8.809270933260246e-05,
-          "p99": 9.056177226062082e-05,
-          "p100": 9.056177226062082e-05
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 28368963.147540983,
-          "p95": 30638080.0,
-          "p99": 30642176.0,
-          "p100": 30642176.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0280280053448712
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 15.84081759058532,
-        "memory_growth_trend": true
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "prom-prometheus-server",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.0015142617196514118,
-          "p95": 0.001777839855075327,
-          "p99": 0.0018488142836183398,
-          "p100": 0.0018488142836183398
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 289355675.27868855,
-          "p95": 308690944.0,
-          "p99": 308690944.0,
-          "p100": 308690944.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0399217220495969
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 12.52052912896772,
-        "memory_growth_trend": true
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "web-a",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.19701886683789652,
-          "p95": 0.20003206176391455,
-          "p99": 0.20003269185977524,
-          "p100": 0.20003269185977524
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 14610432.0,
-          "p95": 14610432.0,
-          "p99": 14610432.0,
-          "p100": 14610432.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0000031499743347
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 0.0,
-        "memory_growth_trend": false
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "web-b",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 2,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.39459602785714293,
-          "p95": 0.40006554978086095,
-          "p99": 0.4000833262731637,
-          "p100": 0.40008401421243434
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 16089088.0,
-          "p95": 17518592.0,
-          "p99": 17518592.0,
-          "p100": 17518592.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.0000460910560065
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 19.502654372729815,
-        "memory_growth_trend": true
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
-      }
-    },
-    {
-      "deployment": "worker-a",
-      "insufficient_data": false,
-      "evidence": [],
-      "resource_facts": {
-        "replicas": 1,
-        "cpu_request": null,
-        "cpu_usage": {
-          "avg": 0.4929344274994181,
-          "p95": 0.5000473240273566,
-          "p99": 0.5000584930021998,
-          "p100": 0.5000584930021998
-        },
-        "memory_request": null,
-        "memory_usage": {
-          "avg": 18628608.0,
-          "p95": 18628608.0,
-          "p99": 18628608.0,
-          "p100": 18628608.0
-        }
-      },
-      "derived_metrics": {
-        "cpu_overprovision_ratio": null,
-        "memory_overprovision_ratio": null,
-        "spike_ratio": 1.000022335835643
-      },
-      "behavior_flags": {
-        "bursty_workload": false,
-        "memory_growth_percent": 0.0,
-        "memory_growth_trend": false
-      },
-      "scheduling_facts": {
-        "nodes_used": [],
-        "pods_per_node_distribution": {},
-        "pending_pods": null
-      },
-      "edge_cases": [],
-      "safety_classification": {
-        "risk_level": "Medium",
-        "confidence_level": "Low",
-        "safe_to_resize": "false"
+      "scheduling_facts": {},
+      "node_conditions": {
+        "ready": true,
+        "memory_pressure": false,
+        "disk_pressure": false,
+        "pid_pressure": false
       }
     }
   ],
-  "hpa_analysis": [
-    {
-      "hpa_enabled": true,
-      "insufficient_data": true,
-      "evidence": [
-        "no replicas timeseries provided for scaling behavior analysis"
-      ],
-      "hpa_config_facts": {
-        "metric_type": null,
-        "target_utilization": null,
-        "min_replicas": 1,
-        "max_replicas": null
-      },
-      "scaling_behavior": {},
-      "linked_resource_facts": {},
-      "analysis_flags": {},
-      "safety_classification": {}
-    },
-    {
-      "hpa_enabled": true,
-      "insufficient_data": true,
-      "evidence": [
-        "no replicas timeseries provided for scaling behavior analysis"
-      ],
-      "hpa_config_facts": {
-        "metric_type": null,
-        "target_utilization": null,
-        "min_replicas": 1,
-        "max_replicas": null
-      },
-      "scaling_behavior": {},
-      "linked_resource_facts": {},
-      "analysis_flags": {},
-      "safety_classification": {}
-    },
-    {
-      "hpa_enabled": true,
-      "insufficient_data": true,
-      "evidence": [
-        "no replicas timeseries provided for scaling behavior analysis"
-      ],
-      "hpa_config_facts": {
-        "metric_type": null,
-        "target_utilization": null,
-        "min_replicas": 2,
-        "max_replicas": null
-      },
-      "scaling_behavior": {},
-      "linked_resource_facts": {},
-      "analysis_flags": {},
-      "safety_classification": {}
-    },
-    {
-      "hpa_enabled": true,
-      "insufficient_data": true,
-      "evidence": [
-        "no replicas timeseries provided for scaling behavior analysis"
-      ],
-      "hpa_config_facts": {
-        "metric_type": null,
-        "target_utilization": null,
-        "min_replicas": 1,
-        "max_replicas": null
-      },
-      "scaling_behavior": {},
-      "linked_resource_facts": {},
-      "analysis_flags": {},
-      "safety_classification": {}
-    }
-  ],
-  "node_analysis": {
-    "insufficient_data": true,
-    "evidence": [
-      "no node allocatable metrics available from Prometheus"
-    ],
-    "node_capacity": {},
-    "requested_vs_actual": {},
-    "fragmentation_metrics": {},
-    "bin_packing": {},
-    "daemonset_overhead": {},
-    "autoscaler_facts": {},
-    "analysis_flags": {},
-    "safety_classification": {}
-  },
   "cross_layer_observations": []
 }

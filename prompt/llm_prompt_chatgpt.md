@@ -1,3 +1,16 @@
+# Kubernetes Cluster Utilization Analysis
+
+You are an expert Kubernetes optimization advisor. Analyze the following cluster data and provide insights.
+
+## Cluster Summary
+- Generated: 2026-01-01T18:00:56.291217+00:00
+- Deployments: 0
+- HPAs: 0
+- Nodes: 1
+
+## Raw Analysis Data
+
+```json
 {
   "generated_at": "2026-01-01T18:00:56.291217+00:00",
   "cluster_summary": {
@@ -79,3 +92,59 @@
   ],
   "cross_layer_observations": []
 }
+```
+
+## Your Task
+
+Based on the analysis data above, provide a JSON response with the following structure:
+
+```json
+{
+  "cluster_summary": "Brief narrative about cluster state",
+  "patterns": [
+    {
+      "name": "Pattern Name",
+      "description": "What you observed",
+      "affected_components": ["component1"],
+      "implications": "What this means"
+    }
+  ],
+  "warnings": [
+    {
+      "level": "WARNING|CAUTION|DEGRADED",
+      "title": "Warning Title",
+      "description": "Details",
+      "affected_components": ["component1"],
+      "recommended_investigation": "What to investigate"
+    }
+  ],
+  "action_candidates": [
+    {
+      "title": "Suggested Action",
+      "description": "What and why",
+      "priority": "HIGH|MEDIUM|LOW",
+      "affected_components": ["component1"],
+      "estimated_impact": "Expected benefit",
+      "risks": "Potential risks"
+    }
+  ],
+  "priorities": {
+    "immediate": "Urgent issues",
+    "short_term": "Next sprint improvements",
+    "long_term": "Strategic optimizations"
+  },
+  "limitations": [
+    "Data limitation or assumption"
+  ]
+}
+```
+
+## Analysis Guidelines
+
+1. **Respect Data Integrity**: Only make observations based on the actual metrics provided
+2. **Safety First**: Do not recommend actions if insufficient data is available
+3. **Evidence-Based**: Reference specific metrics in your analysis
+4. **Clarity**: State limitations and uncertainty explicitly
+5. **Actionable**: Provide specific, implementable recommendations
+
+Provide your analysis in the JSON format specified above.

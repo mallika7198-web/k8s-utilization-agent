@@ -1,51 +1,29 @@
 {
-  "generated_at": "2026-01-01T16:48:55.633030+00:00",
-  "phase2_enabled": true,
+  "generated_at": "2026-01-01T18:04:33.944343+00:00",
   "analysis_reference": "analysis_output.json",
+  "phase2_enabled": true,
+  "llm_mode": "local",
+  "llm_model": "llama3:8b",
   "insights": {
-    "cluster_summary": "Kubernetes cluster is stable with balanced resource distribution across nodes. No immediate resource constraints detected.",
+    "cluster_summary": "The cluster has a single node, with no deployments or HPAs. This suggests an initial setup or testing phase.",
     "patterns": [
       {
-        "pattern": "Node CPU allocation ranges from 20% to 65% across the cluster"
-      },
-      {
-        "pattern": "Memory allocation is consistent with good headroom for growth"
-      },
-      {
-        "pattern": "No evidence of node fragmentation or resource bottlenecks"
-      }
-    ],
-    "warnings": [
-      {
-        "warning_id": "W001",
-        "severity": "Low",
-        "scope": "Cluster",
-        "description": "Node count is static (10 nodes) - no autoscaling configured",
+        "pattern_id": "SingleNodePattern",
+        "description": "A single node with no deployments or HPAs",
+        "affected_objects": [
+          "demo-control-plane"
+        ],
         "evidence": [
-          "node_count",
-          "kubernetes_feature_gates"
-        ],
-        "confidence": "High"
+          "Node demo-control-plane has 20.0 pods scheduled"
+        ]
       }
     ],
-    "action_candidates": [
-      {
-        "action_id": "A001",
-        "scope": "Node",
-        "description": "Monitor node resource utilization for growth trends",
-        "expected_impact": "Early detection of capacity planning needs",
-        "prerequisites": [
-          "Ensure monitoring is configured"
-        ],
-        "blocked_by": [],
-        "confidence": "High"
-      }
-    ],
-    "priorities": "Maintain current stable state; prepare for future capacity planning",
+    "warnings": [],
+    "action_candidates": [],
+    "priorities": "",
     "limitations": [
-      "No deployment-specific metrics available in this observation window",
-      "HPA analysis unavailable (no HPA objects detected)",
-      "Analysis based on 15-minute observation window"
+      "Insufficient data for deployment and HPA analysis",
+      "Confidence in node analysis is High"
     ]
   }
 }
