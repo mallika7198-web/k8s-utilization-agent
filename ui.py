@@ -2,6 +2,11 @@
 """
 Phase 3: Web UI for Kubernetes Utilization Analysis
 Displays Phase 1 facts and Phase 2 LLM insights side-by-side
+
+Tab Structure:
+- Facts & Evidence (Phase 1): Authoritative data from Prometheus
+- Insights (LLM) (Phase 2): Advisory interpretations for human review
+- Raw JSON: Read-only display of both output files
 """
 import json
 import os
@@ -9,17 +14,21 @@ from pathlib import Path
 from flask import Flask, render_template, jsonify
 from datetime import datetime
 
-app = Flask(__name__, template_folder='templates')
+# Get the directory where ui.py is located
+BASE_DIR = Path(__file__).parent.resolve()
 
-# Configuration
-ANALYSIS_FILE = 'analysis_output.json'
-INSIGHTS_FILE = 'insights_output.json'
+app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'))
+
+# Configuration - use paths from output directory
+ANALYSIS_FILE = BASE_DIR / 'output' / 'analysis_output.json'
+INSIGHTS_FILE = BASE_DIR / 'output' / 'insights_output.json'
 
 
 def load_json(filepath):
     """Load JSON file safely"""
     try:
-        if not os.path.exists(filepath):
+        filepath = Path(filepath)
+        if not filepath.exists():
             return None
         with open(filepath, 'r') as f:
             return json.load(f)
@@ -48,16 +57,18 @@ def index():
 def get_analysis():
     """API endpoint for analysis data"""
     data = load_json(ANALYSIS_FILE)
-    return jsonify(data) if data else jsonify({"error": "Not found"}), 404
+    if data:
+        return jsonify(data)
+    return jsonify({"error": "Not found"}), 404
 
 
 @app.route('/api/insights')
 def get_insights():
     """API endpoint for insights data"""
     data = load_json(INSIGHTS_FILE)
-    if not data:
-        return jsonify({"error": "Insights not available"}), 404
-    return jsonify(data)
+    if data:
+        return jsonify(data)
+    return jsonify({"error": "Insights not available"}), 404
 
 
 if __name__ == '__main__':

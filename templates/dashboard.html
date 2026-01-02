@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K8s Utilization Analysis</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --accent-blue: #4a90d9;
+            --accent-green: #27ae60;
+            --accent-yellow: #f39c12;
+            --accent-red: #e74c3c;
+            --border-color: #2a2a4a;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-bottom: 2px solid var(--accent-blue);
+            margin-bottom: 20px;
+        }
+        header h1 { font-size: 1.8rem; color: var(--accent-blue); }
+        header .meta { color: var(--text-secondary); font-size: 0.9rem; margin-top: 5px; }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        .tab-btn {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+            background: var(--bg-secondary);
+        }
+        .tab-btn.insights-tab { color: var(--accent-yellow); }
+        .tab-btn.insights-tab.active { border-bottom-color: var(--accent-yellow); }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: var(--accent-blue);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+        .card h3 {
+            font-size: 1rem;
+            margin: 15px 0 10px;
+            color: var(--text-primary);
+        }
+        
+        /* Grid layouts */
+        .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+        
+        /* Stats */
+        .stat-box {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-box .value { font-size: 2rem; font-weight: bold; color: var(--accent-blue); }
+        .stat-box .label { color: var(--text-secondary); font-size: 0.85rem; }
+        
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background: var(--bg-secondary); color: var(--accent-blue); font-weight: 600; }
+        tr:hover { background: rgba(74, 144, 217, 0.1); }
+        
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .badge-green { background: rgba(39, 174, 96, 0.2); color: var(--accent-green); }
+        .badge-yellow { background: rgba(243, 156, 18, 0.2); color: var(--accent-yellow); }
+        .badge-red { background: rgba(231, 76, 60, 0.2); color: var(--accent-red); }
+        .badge-blue { background: rgba(74, 144, 217, 0.2); color: var(--accent-blue); }
+        .badge-gray { background: rgba(160, 160, 160, 0.2); color: var(--text-secondary); }
+        
+        /* Flags */
+        .flags { display: flex; flex-wrap: wrap; gap: 5px; }
+        .flag {
+            padding: 2px 8px;
+            background: var(--bg-secondary);
+            border-radius: 3px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Insights specific */
+        .insights-disclaimer {
+            background: rgba(243, 156, 18, 0.1);
+            border: 1px solid var(--accent-yellow);
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: var(--accent-yellow);
+        }
+        .cluster-narrative {
+            font-size: 1.05rem;
+            line-height: 1.8;
+            color: var(--text-primary);
+            padding: 15px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            border-left: 4px solid var(--accent-yellow);
+        }
+        .pattern-card, .warning-card, .action-card {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 12px;
+        }
+        .pattern-card { border-left: 4px solid var(--accent-blue); }
+        .warning-card { border-left: 4px solid var(--accent-yellow); }
+        .warning-card.high { border-left-color: var(--accent-red); }
+        .action-card { border-left: 4px solid var(--accent-green); }
+        
+        .evidence-list {
+            margin-top: 10px;
+            padding-left: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .evidence-list li { margin-bottom: 5px; }
+        
+        .affected-objects {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .object-link {
+            background: var(--bg-card);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: var(--accent-blue);
+            cursor: pointer;
+        }
+        .object-link:hover { background: var(--accent-blue); color: white; }
+        
+        .limitations-list {
+            list-style: none;
+            padding: 0;
+        }
+        .limitations-list li {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            margin-bottom: 8px;
+            border-radius: 4px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .limitations-list li::before {
+            content: "⚠️ ";
+        }
+        
+        /* Raw JSON */
+        .json-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .json-toggle button {
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .json-toggle button.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        pre.json-display {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        /* Drill-down */
+        .drill-down { display: none; margin-top: 15px; }
+        .drill-down.active { display: block; }
+        .drill-btn {
+            background: transparent;
+            border: 1px solid var(--accent-blue);
+            color: var(--accent-blue);
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .drill-btn:hover { background: var(--accent-blue); color: white; }
+        
+        /* No data state */
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        .no-data-icon { font-size: 3rem; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🎯 Kubernetes Utilization Analysis</h1>
+            <div class="meta">
+                Generated: {{ analysis.generated_at if analysis else 'N/A' }}
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="facts">📊 Facts & Evidence</button>
+            {% if has_insights %}
+            <button class="tab-btn insights-tab" data-tab="insights">🧠 Insights (LLM)</button>
+            {% endif %}
+            <button class="tab-btn" data-tab="raw">📄 Raw JSON</button>
+        </div>
+
+        <!-- TAB 1: Facts & Evidence (Phase 1) -->
+        <div id="facts" class="tab-content active">
+            <!-- Cluster Overview -->
+            <div class="card">
+                <h2>Cluster Overview</h2>
+                <div class="grid-3">
+                    <div class="stat-box">
+                        <div class="value">{{ analysis.cluster_summary.deployment_count }}</div>
+                        <div class="label">Deployments</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="value">{{ analysis.cluster_summary.hpa_count }}</div>
+                        <div class="label">HPAs</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="value">{{ analysis.cluster_summary.node_count }}</div>
+                        <div class="label">Nodes</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deployments Table -->
+            <div class="card">
+                <h2>Deployment Analysis</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Namespace</th>
+                            <th>Replicas</th>
+                            <th>CPU Util%</th>
+                            <th>Mem Util%</th>
+                            <th>Behavior Flags</th>
+                            <th>Safe to Resize</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in analysis.deployment_analysis %}
+                        <tr>
+                            <td><strong>{{ d.deployment.name }}</strong></td>
+                            <td>{{ d.deployment.namespace }}</td>
+                            <td>{{ d.deployment.replicas.ready }}/{{ d.deployment.replicas.desired }}</td>
+                            <td>
+                                {% set cpu = d.request_allocation.cpu_utilization_percent %}
+                                <span class="badge {% if cpu > 90 %}badge-red{% elif cpu > 70 %}badge-yellow{% else %}badge-green{% endif %}">
+                                    {{ cpu }}%
+                                </span>
+                            </td>
+                            <td>
+                                {% set mem = d.request_allocation.memory_utilization_percent %}
+                                <span class="badge {% if mem > 90 %}badge-red{% elif mem > 70 %}badge-yellow{% else %}badge-green{% endif %}">
+                                    {{ mem }}%
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flags">
+                                    {% for flag in d.behavior_flags %}
+                                    <span class="flag">{{ flag }}</span>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if d.unsafe_to_resize %}
+                                <span class="badge badge-red">⚠️ Unsafe</span>
+                                {% else %}
+                                <span class="badge badge-green">✓ Safe</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="drill-btn" onclick="toggleDrill('deploy-{{ loop.index }}')">View</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="8" style="padding: 0;">
+                                <div id="deploy-{{ loop.index }}" class="drill-down">
+                                    <div class="card" style="margin: 10px; background: var(--bg-secondary);">
+                                        <h3>Resource Usage Details: {{ d.deployment.name }}</h3>
+                                        <div class="grid-2">
+                                            <div>
+                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">CPU</h4>
+                                                <table>
+                                                    <tr><td>Average</td><td>{{ d.resource_usage.cpu.avg_cores }} cores</td></tr>
+                                                    <tr><td>P95</td><td>{{ d.resource_usage.cpu.p95_cores }} cores</td></tr>
+                                                    <tr><td>P99</td><td>{{ d.resource_usage.cpu.p99_cores }} cores</td></tr>
+                                                    <tr><td>Max</td><td>{{ d.resource_usage.cpu.max_cores }} cores</td></tr>
+                                                </table>
+                                            </div>
+                                            <div>
+                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">Memory</h4>
+                                                <table>
+                                                    <tr><td>Average</td><td>{{ (d.resource_usage.memory.avg_bytes / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>P95</td><td>{{ (d.resource_usage.memory.p95_bytes / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>P99</td><td>{{ (d.resource_usage.memory.p99_bytes / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>Max</td><td>{{ (d.resource_usage.memory.max_bytes / 1048576) | round(1) }} MiB</td></tr>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <h4 style="color: var(--accent-blue); margin: 15px 0 10px;">Request Allocation</h4>
+                                        <table>
+                                            <tr><td>CPU Requests</td><td>{{ d.request_allocation.cpu_requests }}</td></tr>
+                                            <tr><td>Memory Requests</td><td>{{ d.request_allocation.memory_requests }}</td></tr>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- HPA Analysis -->
+            <div class="card">
+                <h2>HPA Analysis</h2>
+                {% if analysis.hpa_analysis %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Namespace</th>
+                            <th>Replicas (curr/min/max)</th>
+                            <th>CPU Target</th>
+                            <th>Scaling Status</th>
+                            <th>Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for h in analysis.hpa_analysis %}
+                        <tr>
+                            <td><strong>{{ h.hpa.name }}</strong></td>
+                            <td>{{ h.hpa.namespace }}</td>
+                            <td>{{ h.scaling_config.current_replicas }} / {{ h.scaling_config.min_replicas }} / {{ h.scaling_config.max_replicas }}</td>
+                            <td>{{ h.scaling_behavior.current_load }}%</td>
+                            <td>
+                                {% set status = h.scaling_status %}
+                                <span class="badge {% if status == 'HEALTHY' %}badge-green{% elif status == 'CAUTION' %}badge-yellow{% else %}badge-red{% endif %}">
+                                    {{ status }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="flags">
+                                    {% for flag in h.scaling_flags %}
+                                    <span class="flag">{{ flag }}</span>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="no-data">
+                    <div class="no-data-icon">📋</div>
+                    <p>No HPA data available</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Node Analysis -->
+            <div class="card">
+                <h2>Node Analysis</h2>
+                {% if analysis.node_analysis %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Node</th>
+                            <th>Status</th>
+                            <th>CPU Usage</th>
+                            <th>Memory Usage</th>
+                            <th>Pods</th>
+                            <th>Packing Efficiency</th>
+                            <th>Fragmentation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for n in analysis.node_analysis %}
+                        <tr>
+                            <td><strong>{{ n.node.name }}</strong></td>
+                            <td>
+                                <span class="badge {% if n.node_conditions.ready %}badge-green{% else %}badge-red{% endif %}">
+                                    {% if n.node_conditions.ready %}Ready{% else %}NotReady{% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                {% set cpu_pct = ((n.utilization_facts.cpu_usage_cores / n.allocatable_facts.cpu_allocatable) * 100) | round(1) %}
+                                <span class="badge {% if cpu_pct > 90 %}badge-red{% elif cpu_pct > 70 %}badge-yellow{% else %}badge-green{% endif %}">
+                                    {{ cpu_pct }}%
+                                </span>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    {{ n.utilization_facts.cpu_usage_cores | round(2) }} / {{ n.allocatable_facts.cpu_allocatable }} cores
+                                </div>
+                            </td>
+                            <td>
+                                {% set mem_pct = ((n.utilization_facts.memory_usage_bytes / n.allocatable_facts.memory_allocatable) * 100) | round(1) %}
+                                <span class="badge {% if mem_pct > 90 %}badge-red{% elif mem_pct > 70 %}badge-yellow{% else %}badge-green{% endif %}">
+                                    {{ mem_pct }}%
+                                </span>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    {{ (n.utilization_facts.memory_usage_bytes / 1073741824) | round(2) }} / {{ (n.allocatable_facts.memory_allocatable / 1073741824) | round(2) }} GiB
+                                </div>
+                            </td>
+                            <td>{{ n.utilization_facts.pod_count }} / {{ n.allocatable_facts.pods_allocatable }}</td>
+                            <td>
+                                {% set eff = n.fragmentation_analysis.pod_packing_efficiency %}
+                                <span class="badge {% if eff >= 0.8 %}badge-green{% elif eff >= 0.6 %}badge-yellow{% else %}badge-red{% endif %}">
+                                    {{ (eff * 100) | round(1) }}%
+                                </span>
+                            </td>
+                            <td>
+                                <div style="font-size: 0.85rem;">
+                                    CPU: {{ (n.fragmentation_analysis.cpu_fragmentation * 100) | round(1) }}%<br>
+                                    Mem: {{ (n.fragmentation_analysis.memory_fragmentation * 100) | round(1) }}%
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="no-data">
+                    <div class="no-data-icon">🖥️</div>
+                    <p>No node data available</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Cross-Layer Observations -->
+            {% if analysis.cross_layer_observations %}
+            <div class="card">
+                <h2>Cross-Layer Observations</h2>
+                {% for obs in analysis.cross_layer_observations %}
+                <div class="pattern-card" style="border-left-color: {% if obs.risk_level == 'High' %}var(--accent-red){% elif obs.risk_level == 'Medium' %}var(--accent-yellow){% else %}var(--accent-green){% endif %};">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>{{ obs.observation }}</strong>
+                        <span class="badge {% if obs.risk_level == 'High' %}badge-red{% elif obs.risk_level == 'Medium' %}badge-yellow{% else %}badge-green{% endif %}">
+                            {{ obs.risk_level }} Risk
+                        </span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+                        Scope: {{ obs.scope }}
+                    </div>
+                    <p style="margin-top: 10px; font-size: 0.9rem;">{{ obs.details }}</p>
+                    <div class="affected-objects" style="margin-top: 10px;">
+                        {% for comp in obs.affected_components %}
+                        <span class="object-link">{{ comp }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- TAB 2: Insights (Phase 2 - LLM) -->
+        {% if has_insights %}
+        <div id="insights" class="tab-content">
+            <div class="insights-disclaimer">
+                🧠 <strong>Insights generated by LLM</strong> — Based on Phase-1 analysis. For human review only.
+            </div>
+
+            <!-- Cluster Summary -->
+            <div class="card">
+                <h2>Cluster Summary</h2>
+                <div class="cluster-narrative">
+                    {{ insights.cluster_summary }}
+                </div>
+            </div>
+
+            <!-- Patterns Detected -->
+            <div class="card">
+                <h2>Patterns Detected</h2>
+                {% if insights.patterns %}
+                {% for p in insights.patterns %}
+                <div class="pattern-card">
+                    <strong>{{ p.description }}</strong>
+                    <div class="affected-objects">
+                        {% for obj in p.affected_objects %}
+                        <span class="object-link" onclick="showDeployment('{{ obj }}')">{{ obj }}</span>
+                        {% endfor %}
+                    </div>
+                    <ul class="evidence-list">
+                        {% for e in p.evidence %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="no-data">No patterns detected</p>
+                {% endif %}
+            </div>
+
+            <!-- Warnings -->
+            <div class="card">
+                <h2>Warnings</h2>
+                {% if insights.warnings %}
+                {% for w in insights.warnings %}
+                <div class="warning-card {% if w.severity == 'High' %}high{% endif %}">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>{{ w.description }}</strong>
+                        <span class="badge {% if w.severity == 'High' %}badge-red{% elif w.severity == 'Medium' %}badge-yellow{% else %}badge-gray{% endif %}">
+                            {{ w.severity }}
+                        </span>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 0.85rem; color: var(--text-secondary);">
+                        Scope: {{ w.scope }} | Confidence: {{ w.confidence }}
+                    </div>
+                    <ul class="evidence-list">
+                        {% for e in w.evidence %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="no-data">No warnings</p>
+                {% endif %}
+            </div>
+
+            <!-- Action Candidates -->
+            <div class="card">
+                <h2>Candidate Areas for Review</h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
+                    These are areas that may warrant investigation — not automated recommendations.
+                </p>
+                {% if insights.action_candidates %}
+                {% for a in insights.action_candidates %}
+                <div class="action-card">
+                    <strong>{{ a.description }}</strong>
+                    <div style="margin-top: 8px; font-size: 0.9rem;">
+                        <span class="badge badge-blue">{{ a.scope }}</span>
+                        {% if a.confidence %}
+                        <span class="badge badge-gray">Confidence: {{ a.confidence }}</span>
+                        {% endif %}
+                    </div>
+                    {% if a.expected_impact %}
+                    <p style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
+                        <strong>Expected impact:</strong> {{ a.expected_impact }}
+                    </p>
+                    {% endif %}
+                    {% if a.prerequisites %}
+                    <p style="margin-top: 5px; font-size: 0.85rem; color: var(--text-secondary);">
+                        <strong>Prerequisites:</strong> {{ a.prerequisites | join(', ') if a.prerequisites is iterable and a.prerequisites is not string else a.prerequisites }}
+                    </p>
+                    {% endif %}
+                    {% if a.blocked_by %}
+                    <p style="margin-top: 5px; font-size: 0.85rem; color: var(--accent-red);">
+                        <strong>⚠️ Blocked by:</strong> {{ a.blocked_by }}
+                    </p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="no-data">No action candidates identified</p>
+                {% endif %}
+            </div>
+
+            <!-- Priorities -->
+            <div class="card">
+                <h2>Prioritization</h2>
+                <div class="cluster-narrative">
+                    {{ insights.priorities if insights.priorities else 'No prioritization provided' }}
+                </div>
+            </div>
+
+            <!-- Limitations -->
+            <div class="card">
+                <h2>Limitations</h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
+                    What the LLM could not be confident about:
+                </p>
+                {% if insights.limitations %}
+                <ul class="limitations-list">
+                    {% for l in insights.limitations %}
+                    <li>{{ l }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="no-data">No limitations noted</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- TAB 3: Raw JSON -->
+        <div id="raw" class="tab-content">
+            <div class="card">
+                <h2>Raw JSON Output</h2>
+                <div class="json-toggle">
+                    <button class="active" onclick="showJson('analysis')">analysis_output.json</button>
+                    {% if has_insights %}
+                    <button onclick="showJson('insights')">insights_output.json</button>
+                    {% endif %}
+                </div>
+                <pre id="json-analysis" class="json-display">{{ analysis | tojson(indent=2) }}</pre>
+                {% if has_insights %}
+                <pre id="json-insights" class="json-display" style="display: none;">{{ insights | tojson(indent=2) }}</pre>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Drill-down toggle
+        function toggleDrill(id) {
+            const el = document.getElementById(id);
+            el.classList.toggle('active');
+        }
+
+        // JSON toggle
+        function showJson(type) {
+            document.querySelectorAll('.json-toggle button').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('json-analysis').style.display = type === 'analysis' ? 'block' : 'none';
+            const insightsEl = document.getElementById('json-insights');
+            if (insightsEl) {
+                insightsEl.style.display = type === 'insights' ? 'block' : 'none';
+            }
+        }
+
+        // Navigate to deployment from insights
+        function showDeployment(name) {
+            document.querySelector('[data-tab="facts"]').click();
+            // Scroll to deployment section
+            setTimeout(() => {
+                const tables = document.querySelectorAll('table');
+                tables.forEach(t => {
+                    t.querySelectorAll('td').forEach(td => {
+                        if (td.textContent.includes(name)) {
+                            td.closest('tr').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            td.closest('tr').style.background = 'rgba(74, 144, 217, 0.3)';
+                            setTimeout(() => td.closest('tr').style.background = '', 2000);
+                        }
+                    });
+                });
+            }, 100);
+        }
+    </script>
+</body>
+</html>
