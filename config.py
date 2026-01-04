@@ -1,7 +1,8 @@
 import os
+import json
 import logging
 import sys
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
 
@@ -35,7 +36,72 @@ def _env_bool(name: str, default: bool) -> bool:
     return v.lower() in ("1", "true", "yes", "on")
 
 
-PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+# =============================================================================
+# Prometheus Endpoints Configuration
+# =============================================================================
+# Multi-cluster Prometheus endpoints with metadata
+# Can be overridden via PROMETHEUS_ENDPOINTS_JSON environment variable
+_DEFAULT_PROMETHEUS_ENDPOINTS: List[Dict[str, Any]] = [
+    {
+        "cluster_name": "prod-cluster-1",
+        "project": "payments",
+        "environment": "prod",
+        "url": "https://prometheus.prod.cluster1.example.com",
+        "owner": "payments-team"
+    },
+    {
+        "cluster_name": "prod-cluster-2",
+        "project": "orders",
+        "environment": "prod",
+        "url": "https://prometheus.prod.cluster2.example.com",
+        "owner": "orders-team"
+    },
+    {
+        "cluster_name": "local-kind",
+        "project": "local",
+        "environment": "local",
+        "url": "http://localhost:9090",
+        "owner": "test"
+    }
+]
+
+def _load_prometheus_endpoints() -> List[Dict[str, Any]]:
+    """Load Prometheus endpoints from env var or use defaults"""
+    env_json = os.getenv("PROMETHEUS_ENDPOINTS_JSON")
+    if env_json:
+        try:
+            return json.loads(env_json)
+        except json.JSONDecodeError:
+            logging.warning("Invalid PROMETHEUS_ENDPOINTS_JSON, using defaults")
+    return _DEFAULT_PROMETHEUS_ENDPOINTS
+
+PROMETHEUS_ENDPOINTS: List[Dict[str, Any]] = _load_prometheus_endpoints()
+
+# Active cluster selection (by cluster_name or index)
+ACTIVE_CLUSTER: str = os.getenv("ACTIVE_CLUSTER", "local-kind")
+
+def get_active_prometheus_url() -> str:
+    """Get the URL for the currently active cluster"""
+    for endpoint in PROMETHEUS_ENDPOINTS:
+        if endpoint.get("cluster_name") == ACTIVE_CLUSTER:
+            return endpoint["url"]
+    # Fallback to first endpoint
+    if PROMETHEUS_ENDPOINTS:
+        return PROMETHEUS_ENDPOINTS[0]["url"]
+    return "http://localhost:9090"
+
+def get_active_cluster_info() -> Dict[str, Any]:
+    """Get full info for the currently active cluster"""
+    for endpoint in PROMETHEUS_ENDPOINTS:
+        if endpoint.get("cluster_name") == ACTIVE_CLUSTER:
+            return endpoint
+    if PROMETHEUS_ENDPOINTS:
+        return PROMETHEUS_ENDPOINTS[0]
+    return {"cluster_name": "unknown", "url": "http://localhost:9090"}
+
+# Legacy compatibility
+PROMETHEUS_URL: str = get_active_prometheus_url()
+
 PROMETHEUS_TIMEOUT_SECONDS: int = int(os.getenv("PROMETHEUS_TIMEOUT_SECONDS", "30"))
 PROMETHEUS_RETRY_COUNT: int = int(os.getenv("PROMETHEUS_RETRY_COUNT", "3"))
 PROMETHEUS_RETRY_BACKOFF_BASE: int = int(os.getenv("PROMETHEUS_RETRY_BACKOFF_BASE", "1"))
@@ -131,7 +197,11 @@ OUTPUT ONLY THE JSON OBJECT. NO OTHER TEXT.
 
 
 __all__ = [
-    "PROMETHEUS_URL",
+    "PROMETHEUS_ENDPOINTS",
+    "ACTIVE_CLUSTER",
+    "get_active_prometheus_url",
+    "get_active_cluster_info",
+    "PROMETHEUS_URL",  # Legacy compatibility
     "PROMETHEUS_TIMEOUT_SECONDS",
     "PROMETHEUS_RETRY_COUNT",
     "PROMETHEUS_RETRY_BACKOFF_BASE",
@@ -219,11 +289,14 @@ def validate_config() -> None:
     except ConfigValidationError as e:
         errors.append(str(e))
     
-    # Validate URLs
-    try:
-        _validate_url("PROMETHEUS_URL", PROMETHEUS_URL)
-    except ConfigValidationError as e:
-        errors.append(str(e))
+    # Validate Prometheus endpoints
+    for i, endpoint in enumerate(PROMETHEUS_ENDPOINTS):
+        url = endpoint.get("url", "")
+        cluster_name = endpoint.get("cluster_name", f"endpoint[{i}]")
+        try:
+            _validate_url(f"PROMETHEUS_ENDPOINTS[{cluster_name}].url", url)
+        except ConfigValidationError as e:
+            errors.append(str(e))
     
     try:
         _validate_url("LLM_ENDPOINT_URL", LLM_ENDPOINT_URL)
