@@ -250,6 +250,103 @@
             color: var(--text-secondary);
         }
         .no-data-icon { font-size: 3rem; margin-bottom: 15px; }
+        
+        /* Node Fragmentation Attribution */
+        .frag-section {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            border-left: 4px solid var(--accent-yellow);
+        }
+        .frag-section h4 {
+            color: var(--accent-yellow);
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        .frag-category {
+            margin-bottom: 15px;
+        }
+        .frag-category h5 {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .frag-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .frag-list li {
+            padding: 6px 10px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .frag-list li .reason {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-left: 10px;
+        }
+        .frag-empty {
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 0.85rem;
+            padding: 10px;
+        }
+        .low-confidence {
+            opacity: 0.6;
+        }
+        
+        /* LLM Review Sections */
+        .review-section {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .review-section h4 {
+            color: var(--accent-blue);
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+        .review-category {
+            margin-bottom: 12px;
+        }
+        .review-category-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .review-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .review-item {
+            background: var(--bg-card);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+        .review-item.warning { border-left: 3px solid var(--accent-yellow); }
+        .review-item.danger { border-left: 3px solid var(--accent-red); }
+        .review-empty {
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
@@ -482,12 +579,103 @@
                                 </span>
                             </td>
                             <td>
+                                {% set cpu_frag = n.fragmentation_analysis.cpu_fragmentation %}
+                                {% set mem_frag = n.fragmentation_analysis.memory_fragmentation %}
                                 <div style="font-size: 0.85rem;">
-                                    CPU: {{ (n.fragmentation_analysis.cpu_fragmentation * 100) | round(1) }}%<br>
-                                    Mem: {{ (n.fragmentation_analysis.memory_fragmentation * 100) | round(1) }}%
+                                    <span class="{% if cpu_frag > 0.3 %}badge badge-yellow{% endif %}">CPU: {{ (cpu_frag * 100) | round(1) }}%</span><br>
+                                    <span class="{% if mem_frag > 0.3 %}badge badge-yellow{% endif %}">Mem: {{ (mem_frag * 100) | round(1) }}%</span>
+                                </div>
+                                {% if n.fragmentation_attribution %}
+                                <button class="drill-btn" style="margin-top: 5px;" onclick="toggleDrill('frag-{{ loop.index }}')">Attribution</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <!-- Node Fragmentation Attribution Detail Row -->
+                        {% if n.fragmentation_attribution %}
+                        <tr>
+                            <td colspan="7" style="padding: 0;">
+                                <div id="frag-{{ loop.index }}" class="drill-down">
+                                    <div class="frag-section">
+                                        <h4>🔍 NODE FRAGMENTATION – REVIEW: {{ n.node.name }}</h4>
+                                        
+                                        <!-- Large Request Pods -->
+                                        <div class="frag-category">
+                                            <h5>Large Request Pods</h5>
+                                            {% if n.fragmentation_attribution.large_request_pods %}
+                                            <ul class="frag-list">
+                                                {% for pod in n.fragmentation_attribution.large_request_pods %}
+                                                <li>
+                                                    <span class="object-link" onclick="showDeployment('{{ pod.pod_name }}')">{{ pod.pod_name }}</span>
+                                                    <span class="reason">{{ pod.reason }}</span>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% else %}
+                                            <div class="frag-empty">No large request pods detected</div>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <!-- Constraint Blockers -->
+                                        <div class="frag-category">
+                                            <h5>Placement Constraint Blockers</h5>
+                                            {% if n.fragmentation_attribution.constraint_blockers %}
+                                            <ul class="frag-list">
+                                                {% for blocker in n.fragmentation_attribution.constraint_blockers %}
+                                                <li>
+                                                    <span class="object-link" onclick="showDeployment('{{ blocker.pod_name }}')">{{ blocker.pod_name }}</span>
+                                                    <span class="reason">{{ blocker.constraint_type }}</span>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% else %}
+                                            <div class="frag-empty">No constraint blockers detected</div>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <!-- DaemonSet Overhead -->
+                                        <div class="frag-category">
+                                            <h5>DaemonSet Overhead</h5>
+                                            {% set ds = n.fragmentation_attribution.daemonset_overhead %}
+                                            {% if ds and ds.exceeds_threshold %}
+                                            <ul class="frag-list">
+                                                <li style="flex-direction: column; align-items: flex-start;">
+                                                    <div>
+                                                        <span class="badge badge-yellow">CPU: {{ ds.cpu_percent | round(1) }}%</span>
+                                                        <span class="badge badge-yellow">Mem: {{ ds.memory_percent | round(1) }}%</span>
+                                                    </div>
+                                                    <div class="reason" style="margin-left: 0; margin-top: 5px;">
+                                                        Contributing: {{ ds.contributing_daemonsets | join(', ') }}
+                                                    </div>
+                                                </li>
+                                            </ul>
+                                            {% elif ds %}
+                                            <div class="frag-empty">DaemonSet overhead within threshold (CPU: {{ ds.cpu_percent | round(1) }}%, Mem: {{ ds.memory_percent | round(1) }}%)</div>
+                                            {% else %}
+                                            <div class="frag-empty">No DaemonSet overhead data</div>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <!-- Scale-Down Blockers -->
+                                        <div class="frag-category">
+                                            <h5>Scale-Down Blockers</h5>
+                                            {% if n.fragmentation_attribution.scale_down_blockers %}
+                                            <ul class="frag-list">
+                                                {% for blocker in n.fragmentation_attribution.scale_down_blockers %}
+                                                <li>
+                                                    <span class="object-link" onclick="showDeployment('{{ blocker.pod_name }}')">{{ blocker.pod_name }}</span>
+                                                    <span class="reason">{{ blocker.blocking_reason }}</span>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% else %}
+                                            <div class="frag-empty">No scale-down blockers detected</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
                                 </div>
                             </td>
                         </tr>
+                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
@@ -530,21 +718,223 @@
         {% if has_insights %}
         <div id="insights" class="tab-content">
             <div class="insights-disclaimer">
-                🧠 <strong>Insights generated by LLM</strong> — Based on Phase-1 analysis. For human review only.
+                🧠 <strong>LLM-Generated Summary</strong> — Groups Phase-1 facts for review. Not recommendations.
             </div>
 
-            <!-- Cluster Summary -->
+            <!-- Summary -->
             <div class="card">
-                <h2>Cluster Summary</h2>
+                <h2>Summary</h2>
                 <div class="cluster-narrative">
-                    {{ insights.cluster_summary }}
+                    {{ insights.summary if insights.summary else insights.cluster_summary if insights.cluster_summary else 'No summary available' }}
                 </div>
             </div>
 
-            <!-- Patterns Detected -->
+            <!-- Deployment Review -->
+            {% if insights.deployment_review %}
+            <div class="card">
+                <h2>Deployment Review</h2>
+                <div class="review-section">
+                    {% if insights.deployment_review.bursty %}
+                    <div class="review-category">
+                        <div class="review-category-label">Bursty</div>
+                        <div class="review-items">
+                            {% for item in insights.deployment_review.bursty %}
+                            <span class="review-item warning" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.deployment_review.underutilized %}
+                    <div class="review-category">
+                        <div class="review-category-label">Underutilized</div>
+                        <div class="review-items">
+                            {% for item in insights.deployment_review.underutilized %}
+                            <span class="review-item" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.deployment_review.memory_pressure %}
+                    <div class="review-category">
+                        <div class="review-category-label">Memory Pressure</div>
+                        <div class="review-items">
+                            {% for item in insights.deployment_review.memory_pressure %}
+                            <span class="review-item danger" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.deployment_review.unsafe_to_resize %}
+                    <div class="review-category">
+                        <div class="review-category-label">Unsafe to Resize</div>
+                        <div class="review-items">
+                            {% for item in insights.deployment_review.unsafe_to_resize %}
+                            <span class="review-item danger" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not insights.deployment_review.bursty and not insights.deployment_review.underutilized and not insights.deployment_review.memory_pressure and not insights.deployment_review.unsafe_to_resize %}
+                    <div class="review-empty">No deployment issues flagged</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- HPA Review -->
+            {% if insights.hpa_review %}
+            <div class="card">
+                <h2>HPA Review</h2>
+                <div class="review-section">
+                    {% if insights.hpa_review.at_threshold %}
+                    <div class="review-category">
+                        <div class="review-category-label">At Threshold</div>
+                        <div class="review-items">
+                            {% for item in insights.hpa_review.at_threshold %}
+                            <span class="review-item warning" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.hpa_review.scaling_blocked %}
+                    <div class="review-category">
+                        <div class="review-category-label">Scaling Blocked</div>
+                        <div class="review-items">
+                            {% for item in insights.hpa_review.scaling_blocked %}
+                            <span class="review-item danger" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.hpa_review.scaling_down %}
+                    <div class="review-category">
+                        <div class="review-category-label">Scaling Down</div>
+                        <div class="review-items">
+                            {% for item in insights.hpa_review.scaling_down %}
+                            <span class="review-item" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not insights.hpa_review.at_threshold and not insights.hpa_review.scaling_blocked and not insights.hpa_review.scaling_down %}
+                    <div class="review-empty">No HPA issues flagged</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Node Fragmentation Review -->
+            {% if insights.node_fragmentation_review %}
+            <div class="card">
+                <h2>Node Fragmentation Review</h2>
+                <div class="review-section">
+                    {% if insights.node_fragmentation_review.fragmented_nodes %}
+                    <div class="review-category">
+                        <div class="review-category-label">Fragmented Nodes</div>
+                        <div class="review-items">
+                            {% for item in insights.node_fragmentation_review.fragmented_nodes %}
+                            <span class="review-item warning">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.node_fragmentation_review.large_request_pods %}
+                    <div class="review-category">
+                        <div class="review-category-label">Large Request Pods</div>
+                        <div class="review-items">
+                            {% for item in insights.node_fragmentation_review.large_request_pods %}
+                            <span class="review-item" onclick="showDeployment('{{ item.split(' ')[0] }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.node_fragmentation_review.constraint_blockers %}
+                    <div class="review-category">
+                        <div class="review-category-label">Constraint Blockers</div>
+                        <div class="review-items">
+                            {% for item in insights.node_fragmentation_review.constraint_blockers %}
+                            <span class="review-item warning" onclick="showDeployment('{{ item.split(' ')[0] }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.node_fragmentation_review.daemonset_overhead %}
+                    <div class="review-category">
+                        <div class="review-category-label">DaemonSet Overhead</div>
+                        <div class="review-items">
+                            {% for item in insights.node_fragmentation_review.daemonset_overhead %}
+                            <span class="review-item warning">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.node_fragmentation_review.scale_down_blockers %}
+                    <div class="review-category">
+                        <div class="review-category-label">Scale-Down Blockers</div>
+                        <div class="review-items">
+                            {% for item in insights.node_fragmentation_review.scale_down_blockers %}
+                            <span class="review-item danger" onclick="showDeployment('{{ item.split(' ')[0] }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not insights.node_fragmentation_review.fragmented_nodes and not insights.node_fragmentation_review.large_request_pods and not insights.node_fragmentation_review.constraint_blockers and not insights.node_fragmentation_review.daemonset_overhead and not insights.node_fragmentation_review.scale_down_blockers %}
+                    <div class="review-empty">No node fragmentation issues flagged</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Cross-Layer Risks -->
+            {% if insights.cross_layer_risks %}
+            <div class="card">
+                <h2>Cross-Layer Risks</h2>
+                <div class="review-section">
+                    {% if insights.cross_layer_risks.high %}
+                    <div class="review-category">
+                        <div class="review-category-label">High Risk</div>
+                        <div class="review-items">
+                            {% for item in insights.cross_layer_risks.high %}
+                            <span class="review-item danger" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if insights.cross_layer_risks.medium %}
+                    <div class="review-category">
+                        <div class="review-category-label">Medium Risk</div>
+                        <div class="review-items">
+                            {% for item in insights.cross_layer_risks.medium %}
+                            <span class="review-item warning" onclick="showDeployment('{{ item }}')">{{ item }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not insights.cross_layer_risks.high and not insights.cross_layer_risks.medium %}
+                    <div class="review-empty">No cross-layer risks flagged</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Legacy format support: Patterns -->
+            {% if insights.patterns %}
             <div class="card">
                 <h2>Patterns Detected</h2>
-                {% if insights.patterns %}
                 {% for p in insights.patterns %}
                 <div class="pattern-card">
                     <strong>{{ p.description }}</strong>
@@ -560,15 +950,13 @@
                     </ul>
                 </div>
                 {% endfor %}
-                {% else %}
-                <p class="no-data">No patterns detected</p>
-                {% endif %}
             </div>
+            {% endif %}
 
-            <!-- Warnings -->
+            <!-- Legacy format support: Warnings -->
+            {% if insights.warnings %}
             <div class="card">
                 <h2>Warnings</h2>
-                {% if insights.warnings %}
                 {% for w in insights.warnings %}
                 <div class="warning-card {% if w.severity == 'High' %}high{% endif %}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -587,64 +975,16 @@
                     </ul>
                 </div>
                 {% endfor %}
-                {% else %}
-                <p class="no-data">No warnings</p>
-                {% endif %}
             </div>
-
-            <!-- Action Candidates -->
-            <div class="card">
-                <h2>Candidate Areas for Review</h2>
-                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
-                    These are areas that may warrant investigation — not automated recommendations.
-                </p>
-                {% if insights.action_candidates %}
-                {% for a in insights.action_candidates %}
-                <div class="action-card">
-                    <strong>{{ a.description }}</strong>
-                    <div style="margin-top: 8px; font-size: 0.9rem;">
-                        <span class="badge badge-blue">{{ a.scope }}</span>
-                        {% if a.confidence %}
-                        <span class="badge badge-gray">Confidence: {{ a.confidence }}</span>
-                        {% endif %}
-                    </div>
-                    {% if a.expected_impact %}
-                    <p style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
-                        <strong>Expected impact:</strong> {{ a.expected_impact }}
-                    </p>
-                    {% endif %}
-                    {% if a.prerequisites %}
-                    <p style="margin-top: 5px; font-size: 0.85rem; color: var(--text-secondary);">
-                        <strong>Prerequisites:</strong> {{ a.prerequisites | join(', ') if a.prerequisites is iterable and a.prerequisites is not string else a.prerequisites }}
-                    </p>
-                    {% endif %}
-                    {% if a.blocked_by %}
-                    <p style="margin-top: 5px; font-size: 0.85rem; color: var(--accent-red);">
-                        <strong>⚠️ Blocked by:</strong> {{ a.blocked_by }}
-                    </p>
-                    {% endif %}
-                </div>
-                {% endfor %}
-                {% else %}
-                <p class="no-data">No action candidates identified</p>
-                {% endif %}
-            </div>
-
-            <!-- Priorities -->
-            <div class="card">
-                <h2>Prioritization</h2>
-                <div class="cluster-narrative">
-                    {{ insights.priorities if insights.priorities else 'No prioritization provided' }}
-                </div>
-            </div>
+            {% endif %}
 
             <!-- Limitations -->
             <div class="card">
                 <h2>Limitations</h2>
                 <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
-                    What the LLM could not be confident about:
+                    Data gaps and low-confidence areas:
                 </p>
-                {% if insights.limitations %}
+                {% if insights.limitations and insights.limitations | length > 0 %}
                 <ul class="limitations-list">
                     {% for l in insights.limitations %}
                     <li>{{ l }}</li>

@@ -95,5 +95,14 @@
     ],
     "change_type": "phase2_implementation",
     "description": "Phase 2 LLM Summarization Layer: Updated PHASE2_LLM_PROMPT for concise grouped output format (no narrative prose, no action suggestions). New output schema with summary, deployment_review, hpa_review, node_fragmentation_review, cross_layer_risks, and limitations. Rewrote validator.py with strict Phase-1 reference validation - extracts valid names from analysis_output, rejects unknown objects, enforces category structure, blocks action_candidates. Added 27 validator tests covering structure, Phase-1 reference validation, safety flags, and limitations. Total 95 tests passing."
+  },
+  {
+    "timestamp": "2026-01-04T11:00:00Z",
+    "files_modified": [
+      "templates/dashboard.html",
+      "tests/test_ui.py"
+    ],
+    "change_type": "ui_update",
+    "description": "UI Update for Node Fragmentation Attribution and LLM Summaries: Added Node Fragmentation Attribution drill-down in Node Analysis table showing large_request_pods, constraint_blockers, daemonset_overhead, scale_down_blockers with clickable links to related workloads. Updated Insights (LLM) tab to render new concise grouped format with deployment_review, hpa_review, node_fragmentation_review, cross_layer_risks sections. Added CSS for frag-section, review-section, and review-item components. Maintains backward compatibility with legacy patterns/warnings format. Added 7 UI tests for empty, partial, and full attribution cases. Total 102 tests passing."
   }
 ]
