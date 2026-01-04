@@ -115,6 +115,75 @@ Requires local Ollama:
 ollama run llama3:8b
 ```
 
+### Manual LLM Prompt (ChatGPT/Claude Alternative)
+
+If Phase 2 fails or you want to use ChatGPT/Claude UI instead:
+
+**Step 1:** Copy this prompt into ChatGPT/Claude:
+
+```
+OUTPUT ONLY THIS JSON STRUCTURE (replace placeholders with actual data from input):
+
+{"summary":"Cluster status summary here","deployment_review":{"bursty":[],"underutilized":["coredns (CPU and memory underutilized)"],"memory_pressure":[],"unsafe_to_resize":[]},"hpa_review":{"at_threshold":[],"scaling_blocked":[],"scaling_down":[]},"node_fragmentation_review":{"fragmented_nodes":["demo-control-plane (87% CPU, 90% memory fragmentation)"],"large_request_pods":[],"constraint_blockers":[],"daemonset_overhead":[],"scale_down_blockers":[]},"cross_layer_risks":{"high":[],"medium":[]},"limitations":[]}
+
+RULES:
+- Replace example values with actual data from input
+- Keep the EXACT structure and key names
+- Use [] for empty arrays
+- NO markdown, NO explanation, ONLY the JSON object
+- Start with { and end with }
+
+INPUT DATA:
+```
+
+**Step 2:** Append the simplified analysis data (from `output/{cluster}_analysis_output.json`):
+
+```json
+{
+  "cluster_summary": { "deployment_count": 6, "hpa_count": 4, "node_count": 1 },
+  "deployments": [
+    { "name": "coredns", "namespace": "kube-system", "replicas": 2, "flags": ["CPU_UNDERUTILIZED", "MEMORY_UNDERUTILIZED"] },
+    { "name": "web-b", "namespace": "metrics-demo", "replicas": 2, "flags": [] }
+  ],
+  "hpas": [
+    { "name": "web-a-hpa", "namespace": "metrics-demo", "current_replicas": 1, "min_replicas": 1, "max_replicas": 5, "at_min": true, "flags": ["AT_MIN_REPLICAS"] }
+  ],
+  "nodes": [
+    { "name": "demo-control-plane", "cpu_fragmentation": 0.87, "memory_fragmentation": 0.90, "pod_packing_efficiency": 0.14 }
+  ]
+}
+```
+
+**Step 3:** Copy the JSON response and save to `output/{cluster}_insights_output.json`:
+
+```json
+{
+  "generated_at": "2026-01-04T14:00:00Z",
+  "analysis_reference": "output/local-kind_analysis_output.json",
+  "phase2_enabled": true,
+  "llm_mode": "manual",
+  "llm_model": "chatgpt-4",
+  "insights": {
+    // paste LLM response here
+  }
+}
+```
+
+### Remote LLM Configuration (oss-gpt-120b)
+
+For production with remote LLM:
+
+```bash
+export LLM_MODE=remote
+export LLM_MODEL_NAME=oss-gpt-120b
+export LLM_ENDPOINT_URL=https://your-llm-endpoint.example.com
+export LLM_API_KEY=your-api-key-here
+export LLM_TIMEOUT_SECONDS=180
+export PHASE2_ENABLED=true
+
+python phase2/runner.py
+```
+
 ---
 
 ### Test Coverage
@@ -143,3 +212,71 @@ Phase 2 validator enforces:
 5. All actions blocked if confidence is Low and prerequisites unmet
 
 **File:** `tracker.json` (append-only audit log of all changes)
+
+---
+
+## Analysis Output Explained
+
+### Why are Requests/Limits missing?
+
+The current analysis focuses on **actual usage** from Prometheus, not Kubernetes resource specifications:
+
+| Field | Source | Status |
+|-------|--------|--------|
+| `cpu_avg_cores`, `memory_avg_bytes` | `container_cpu_usage_seconds_total`, `container_memory_usage_bytes` | ✅ Collected |
+| `cpu_requests`, `memory_requests` | `kube_pod_container_resource_requests` | ⚠️ Not yet in deployment_analysis |
+| `cpu_limits`, `memory_limits` | `kube_pod_container_resource_limits` | ⚠️ Not yet in deployment_analysis |
+
+**Why this matters:**
+- Current data shows **what the pods actually use**
+- Requests/limits show **what the pods are configured to use**
+- Comparing both reveals over-provisioning (requests >> usage) or under-provisioning (usage >> requests)
+
+**To add requests/limits**, the deployment analysis needs to query:
+```promql
+kube_pod_container_resource_requests{resource="cpu", pod=~".*deployment-name.*"}
+kube_pod_container_resource_limits{resource="memory", pod=~".*deployment-name.*"}
+```
+
+### Why do CPU and Memory metric counts differ?
+
+Example from analysis:
+```
+"evidence": [
+  "1 pod(s) found for deployment prom-prometheus-server",
+  "4 CPU metric points collected",    # Different!
+  "4 memory metric points collected"  # Same
+]
+```
+
+vs:
+```
+"evidence": [
+  "1 pod(s) found for deployment prom-kube-state-metrics",
+  "3 CPU metric points collected",    # Different!
+  "3 memory metric points collected"
+]
+```
+
+**Explanation:**
+
+1. **Scrape timing**: Prometheus scrapes CPU and memory at regular intervals, but if a pod just started or restarted, it may have fewer data points
+
+2. **Multiple containers**: A pod with 2 containers = 2x metric series. `prom-prometheus-server` has more containers than `prom-kube-state-metrics`
+
+3. **Query window**: The 15-minute window (`METRICS_WINDOW_MINUTES`) captures different amounts of data based on when the pod started
+
+4. **Counter resets**: CPU is a counter (`rate()`), memory is a gauge. Counter resets on restart affect available data points
+
+**What the numbers mean:**
+- `3 CPU metric points` = 3 time-series samples in the 15-min window (at 1-min step = ~3 minutes of data)
+- `6 CPU metric points` for `web-b` = 2 pods × 3 samples each, or 1 pod with 6 samples
+
+**For `web-b` (2 replicas):**
+```
+"6 CPU metric points collected"    # 2 pods × ~3 samples each
+"6 memory metric points collected" # 2 pods × ~3 samples each
+```
+
+This is expected - more pods = more metric points.
+
