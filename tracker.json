@@ -112,5 +112,15 @@
     ],
     "change_type": "config_enhancement",
     "description": "Multi-cluster Prometheus support: Replaced single PROMETHEUS_URL with PROMETHEUS_ENDPOINTS list containing cluster objects (cluster_name, project, environment, url, owner). Added ACTIVE_CLUSTER env var to select which cluster to query. Added get_active_prometheus_url() and get_active_cluster_info() helper functions. Maintained backward compatibility with legacy PROMETHEUS_URL variable. Updated validate_config() to check all endpoint URLs. Default clusters: prod-cluster-1 (payments), prod-cluster-2 (orders), local-kind (development). All 102 tests passing."
+  },
+  {
+    "timestamp": "2026-01-04T13:00:00Z",
+    "files_modified": [
+      "config.py",
+      "orchestrator.py",
+      "phase2/runner.py"
+    ],
+    "change_type": "feature",
+    "description": "Multi-cluster loop with cluster-specific output files: Output files now named {cluster_name}_analysis_output.json and {cluster_name}_insights_output.json. Added RUN_MODE config ('active' or 'all'), get_analysis_output_path(), get_insights_output_path(), get_clusters_to_run() helpers. Orchestrator and Phase 2 runner loop through clusters one by one. Each output includes cluster_info metadata. All 102 tests passing."
   }
 ]
