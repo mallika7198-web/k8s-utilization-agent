@@ -1,6 +1,6 @@
 """
 Phase 2 LLM Runner - Read-only reasoning layer
-Reads analysis_output.json, sends to LLM, writes insights_output.json atomically.
+Reads {cluster}_analysis_output.json, sends to LLM, writes {cluster}_insights_output.json atomically.
 No modifications to Phase 1 output or Prometheus queries.
 """
 import json
@@ -9,7 +9,7 @@ import os
 import sys
 import tempfile
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,7 +24,12 @@ from config import (
     LLM_MODEL_NAME,
     LLM_TIMEOUT_SECONDS,
     LLM_API_KEY,
-    setup_logging
+    setup_logging,
+    get_clusters_to_run,
+    get_analysis_output_path,
+    get_insights_output_path,
+    RUN_MODE,
+    OUTPUT_DIR
 )
 from phase2.llm_client import LLMClient
 from phase2.validator import validate_insights_output
@@ -56,7 +61,22 @@ def _atomic_write(path: str, data: str) -> None:
 
 
 def run_once() -> Dict[str, Any]:
-    """Run Phase 2 LLM analysis once
+    """Run Phase 2 LLM analysis once (legacy single-cluster mode)
+    
+    Returns dict with:
+    - insights: Generated LLM insights
+    - validation_errors: Any validation issues
+    - timestamp: Generation time
+    """
+    return run_once_for_cluster(ANALYSIS_OUTPUT_PATH, INSIGHTS_OUTPUT_PATH)
+
+
+def run_once_for_cluster(analysis_path: str, insights_path: str) -> Dict[str, Any]:
+    """Run Phase 2 LLM analysis for a specific cluster
+    
+    Args:
+        analysis_path: Path to the cluster's analysis_output.json
+        insights_path: Path to write the cluster's insights_output.json
     
     Returns dict with:
     - insights: Generated LLM insights
@@ -65,12 +85,12 @@ def run_once() -> Dict[str, Any]:
     """
     
     # 1. Load Phase 1 analysis (read-only)
-    logger.info(f"Loading Phase 1 analysis from {ANALYSIS_OUTPUT_PATH}...")
+    logger.info(f"Loading Phase 1 analysis from {analysis_path}...")
     try:
-        with open(ANALYSIS_OUTPUT_PATH, 'r') as f:
+        with open(analysis_path, 'r') as f:
             analysis_output = json.load(f)
     except FileNotFoundError:
-        logger.error(f"Phase 1 output not found at {ANALYSIS_OUTPUT_PATH}")
+        logger.error(f"Phase 1 output not found at {analysis_path}")
         return {'error': 'ANALYSIS_OUTPUT_NOT_FOUND'}
     except json.JSONDecodeError:
         logger.error(f"Phase 1 output is not valid JSON")
@@ -142,7 +162,7 @@ def run_once() -> Dict[str, Any]:
     # 6. Wrap insights with metadata
     output = {
         'generated_at': _now_iso(),
-        'analysis_reference': ANALYSIS_OUTPUT_PATH,
+        'analysis_reference': analysis_path,
         'phase2_enabled': True,
         'llm_mode': LLM_MODE,
         'llm_model': LLM_MODEL_NAME,
@@ -164,48 +184,82 @@ def main() -> int:
     logger.info("PHASE 2: LLM-BASED INSIGHTS GENERATION")
     logger.info("=" * 50)
     
-    # Run Phase 2 analysis
-    result = run_once()
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # Check for errors
-    if 'error' in result:
-        error = result.get('error')
-        logger.error(f"Phase 2 failed: {error}")
-        if 'validation_errors' in result:
-            for err in result['validation_errors']:
-                logger.error(f"  - {err}")
-        
-        # Don't overwrite existing valid insights on error
-        if os.path.exists(INSIGHTS_OUTPUT_PATH):
-            logger.warning(f"Keeping existing valid insights at {INSIGHTS_OUTPUT_PATH}")
-        
-        return 1
+    # Get clusters to process
+    clusters = get_clusters_to_run()
+    logger.info(f"Processing {len(clusters)} cluster(s) (mode={RUN_MODE})...")
     
-    # Write insights atomically
-    logger.info(f"Writing insights to {INSIGHTS_OUTPUT_PATH}...")
-    try:
-        _atomic_write(INSIGHTS_OUTPUT_PATH, json.dumps(result, indent=2))
-        logger.info(f"Wrote {len(json.dumps(result)):,} bytes")
-    except Exception as e:
-        logger.error(f"Failed to write insights: {e}")
-        return 2
+    success_count = 0
+    failed_count = 0
+    output_files = []
+    
+    # Loop through clusters one by one
+    for cluster_info in clusters:
+        cluster_name = cluster_info.get('cluster_name', 'unknown')
+        analysis_path = get_analysis_output_path(cluster_name)
+        insights_path = get_insights_output_path(cluster_name)
+        
+        logger.info("-" * 50)
+        logger.info(f"Processing cluster: {cluster_name}")
+        logger.info(f"  Analysis input: {analysis_path}")
+        logger.info(f"  Insights output: {insights_path}")
+        
+        # Check if analysis file exists
+        if not os.path.exists(analysis_path):
+            logger.warning(f"[{cluster_name}] Analysis file not found: {analysis_path}")
+            logger.warning(f"[{cluster_name}] Run Phase 1 first for this cluster")
+            failed_count += 1
+            continue
+        
+        # Run Phase 2 analysis for this cluster
+        result = run_once_for_cluster(analysis_path, insights_path)
+        
+        # Check for errors
+        if 'error' in result:
+            error = result.get('error')
+            logger.error(f"[{cluster_name}] Phase 2 failed: {error}")
+            if 'validation_errors' in result:
+                for err in result['validation_errors']:
+                    logger.error(f"  - {err}")
+            
+            # Don't overwrite existing valid insights on error
+            if os.path.exists(insights_path):
+                logger.warning(f"[{cluster_name}] Keeping existing valid insights at {insights_path}")
+            
+            failed_count += 1
+            continue
+        
+        # Write insights atomically
+        logger.info(f"[{cluster_name}] Writing insights to {insights_path}...")
+        try:
+            _atomic_write(insights_path, json.dumps(result, indent=2))
+            logger.info(f"[{cluster_name}] Wrote {len(json.dumps(result)):,} bytes")
+            output_files.append(insights_path)
+            success_count += 1
+        except Exception as e:
+            logger.error(f"[{cluster_name}] Failed to write insights: {e}")
+            failed_count += 1
+            continue
     
     # Update tracker
-    try:
-        append_change({
-            'files_modified': [INSIGHTS_OUTPUT_PATH],
-            'type': 'phase2_insights',
-            'description': f'Phase 2 LLM insights generated ({LLM_MODE} mode, {LLM_MODEL_NAME})'
-        })
-    except Exception as e:
-        logger.warning(f"Failed to update tracker: {e}")
+    if output_files:
+        try:
+            append_change({
+                'files_modified': output_files,
+                'type': 'phase2_insights',
+                'description': f'Phase 2 LLM insights: {success_count} cluster(s) ({LLM_MODE} mode, {LLM_MODEL_NAME})'
+            })
+        except Exception as e:
+            logger.warning(f"Failed to update tracker: {e}")
     
-    logger.info("Phase 2 complete")
-    logger.info(f"Generated at: {result.get('generated_at')}")
-    logger.info(f"LLM model: {result.get('llm_model')}")
-    logger.info(f"Output: {INSIGHTS_OUTPUT_PATH}")
+    logger.info("=" * 50)
+    logger.info(f"Phase 2 complete: {success_count} succeeded, {failed_count} failed")
+    logger.info(f"Output files: {output_files}")
+    logger.info("=" * 50)
     
-    return 0
+    return 0 if failed_count == 0 else 1
 
 
 def _extract_json_from_response(response: str) -> str:

@@ -8,7 +8,11 @@ import os
 import tempfile
 from typing import List, Dict, Any
 
-from config import ANALYSIS_OUTPUT_PATH, setup_logging, validate_config, ConfigValidationError
+from config import (
+    setup_logging, validate_config, ConfigValidationError,
+    PROMETHEUS_ENDPOINTS, get_clusters_to_run, get_analysis_output_path,
+    RUN_MODE, OUTPUT_DIR
+)
 from metrics import discovery as discovery_mod
 from metrics import prometheus_client as prom
 from metrics.prometheus_client import PrometheusError, clear_cache
@@ -44,23 +48,40 @@ def _atomic_write(path: str, data: str) -> None:
 # use tracker.append_change for append-only updates (best-effort)
 
 
-def run_once() -> Dict[str, Any]:
+def run_once_for_cluster(cluster_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Run analysis for a single cluster
+    
+    Args:
+        cluster_info: Dict with cluster_name, url, project, environment, owner
+        
+    Returns:
+        Analysis output dict
+    """
+    cluster_name = cluster_info.get('cluster_name', 'unknown')
+    prometheus_url = cluster_info.get('url', 'http://localhost:9090')
+    
+    logger.info(f"Analyzing cluster: {cluster_name}")
+    logger.info(f"Prometheus URL: {prometheus_url}")
+    
     # Clear prometheus cache for fresh run
     clear_cache()
+    
+    # Set the Prometheus URL for this cluster
+    prom.PROMETHEUS_URL = prometheus_url
     
     # 1) Check Prometheus connectivity first
     prometheus_available = False
     try:
         prom.query_range('up')
         prometheus_available = True
-        logger.info("Prometheus connection verified")
+        logger.info(f"[{cluster_name}] Prometheus connection verified")
     except PrometheusError as e:
-        logger.warning(f"PROMETHEUS NOT REACHABLE: {e}")
-        logger.warning(f"Expected URL: {prom.PROMETHEUS_URL}")
-        logger.warning("Proceeding with empty metrics...")
+        logger.warning(f"[{cluster_name}] PROMETHEUS NOT REACHABLE: {e}")
+        logger.warning(f"[{cluster_name}] Expected URL: {prometheus_url}")
+        logger.warning(f"[{cluster_name}] Proceeding with empty metrics...")
     except Exception as e:
-        logger.warning(f"PROMETHEUS CONNECTION ERROR: {e}")
-        logger.warning("Proceeding with empty metrics...")
+        logger.warning(f"[{cluster_name}] PROMETHEUS CONNECTION ERROR: {e}")
+        logger.warning(f"[{cluster_name}] Proceeding with empty metrics...")
 
     # 2) Discovery
     deps = discovery_mod.discover_deployments()
@@ -88,9 +109,16 @@ def run_once() -> Dict[str, Any]:
         nodes.get('nodes', [])
     )
 
-    # 5) Aggregate
+    # 6) Aggregate
     output: Dict[str, Any] = {
         'generated_at': _now_iso(),
+        'cluster_info': {
+            'cluster_name': cluster_name,
+            'project': cluster_info.get('project', ''),
+            'environment': cluster_info.get('environment', ''),
+            'owner': cluster_info.get('owner', ''),
+            'prometheus_url': prometheus_url,
+        },
         'cluster_summary': {
             'deployment_count': len(deployment_results),
             'hpa_count': len(hpa_results),
@@ -106,6 +134,15 @@ def run_once() -> Dict[str, Any]:
     return output
 
 
+def run_once() -> Dict[str, Any]:
+    """Legacy single-cluster run (uses active cluster)
+    
+    Kept for backward compatibility. Prefer run_all_clusters() for multi-cluster.
+    """
+    from config import get_active_cluster_info
+    return run_once_for_cluster(get_active_cluster_info())
+
+
 def main() -> int:
     # Setup logging first
     setup_logging()
@@ -118,27 +155,59 @@ def main() -> int:
         logger.error(f"Configuration error: {e}")
         return 1
     
-    logger.info("Starting Kubernetes Utilization Analysis...")
-    out = run_once()
-    # Write atomically
-    try:
-        _atomic_write(ANALYSIS_OUTPUT_PATH, json.dumps(out, indent=2))
-    except Exception as e:
-        logger.error(f"Failed to write analysis output: {e}")
-        return 2
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
+    # Get clusters to process
+    clusters = get_clusters_to_run()
+    logger.info(f"Starting Kubernetes Utilization Analysis (mode={RUN_MODE})")
+    logger.info(f"Processing {len(clusters)} cluster(s)...")
+    
+    success_count = 0
+    failed_count = 0
+    output_files = []
+    
+    # Loop through clusters one by one
+    for cluster_info in clusters:
+        cluster_name = cluster_info.get('cluster_name', 'unknown')
+        output_path = get_analysis_output_path(cluster_name)
+        
+        logger.info("=" * 60)
+        logger.info(f"Processing cluster: {cluster_name}")
+        logger.info("=" * 60)
+        
+        try:
+            out = run_once_for_cluster(cluster_info)
+            
+            # Write atomically
+            _atomic_write(output_path, json.dumps(out, indent=2))
+            logger.info(f"[{cluster_name}] Wrote analysis to {output_path}")
+            
+            output_files.append(output_path)
+            success_count += 1
+            
+        except Exception as e:
+            logger.error(f"[{cluster_name}] Analysis failed: {e}")
+            failed_count += 1
+            continue
 
     # Update tracker.json best-effort using append-only utility
-    try:
-        append_change({
-            'files_modified': [ANALYSIS_OUTPUT_PATH],
-            'type': 'analysis',
-            'description': 'Orchestrator run: produced canonical analysis output'
-        })
-    except Exception as e:
-        logger.warning(f"Failed to update tracker: {e}")
+    if output_files:
+        try:
+            append_change({
+                'files_modified': output_files,
+                'type': 'analysis',
+                'description': f'Orchestrator run: {success_count} cluster(s) analyzed (mode={RUN_MODE})'
+            })
+        except Exception as e:
+            logger.warning(f"Failed to update tracker: {e}")
 
-    logger.info(f"Wrote analysis to {ANALYSIS_OUTPUT_PATH}")
-    return 0
+    logger.info("=" * 60)
+    logger.info(f"Analysis complete: {success_count} succeeded, {failed_count} failed")
+    logger.info(f"Output files: {output_files}")
+    logger.info("=" * 60)
+    
+    return 0 if failed_count == 0 else 1
 
 
 if __name__ == '__main__':

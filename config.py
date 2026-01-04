@@ -115,7 +115,34 @@ LOAD_GENERATION_TARGET_URL: Optional[str] = os.getenv("LOAD_GENERATION_TARGET_UR
 LOAD_GENERATION_DURATION_SECONDS: int = int(os.getenv("LOAD_GENERATION_DURATION_SECONDS", "300"))
 LOAD_GENERATION_CONCURRENCY: int = int(os.getenv("LOAD_GENERATION_CONCURRENCY", "5"))
 EXCLUDED_NAMESPACES: str = os.getenv("EXCLUDED_NAMESPACES", "kube-system,kube-public,istio-system")
+
+# Output directory for cluster-specific files
+OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "output")
+
+# Legacy single-file paths (deprecated, use get_analysis_output_path/get_insights_output_path instead)
 ANALYSIS_OUTPUT_PATH: str = os.getenv("ANALYSIS_OUTPUT_PATH", "output/analysis_output.json")
+
+# Multi-cluster run mode: "all" runs all clusters, "active" runs only ACTIVE_CLUSTER
+RUN_MODE: str = os.getenv("RUN_MODE", "active")  # "all" or "active"
+
+
+def get_analysis_output_path(cluster_name: str) -> str:
+    """Get cluster-specific analysis output path: {cluster_name}_analysis_output.json"""
+    return os.path.join(OUTPUT_DIR, f"{cluster_name}_analysis_output.json")
+
+
+def get_insights_output_path(cluster_name: str) -> str:
+    """Get cluster-specific insights output path: {cluster_name}_insights_output.json"""
+    return os.path.join(OUTPUT_DIR, f"{cluster_name}_insights_output.json")
+
+
+def get_clusters_to_run() -> List[Dict[str, Any]]:
+    """Get list of clusters to run based on RUN_MODE"""
+    if RUN_MODE == "all":
+        return PROMETHEUS_ENDPOINTS
+    else:
+        # Return only the active cluster
+        return [get_active_cluster_info()]
 
 # =============================================================================
 # Node Fragmentation Attribution Configuration
@@ -129,6 +156,7 @@ FRAGMENTATION_THRESHOLD: float = float(os.getenv("FRAGMENTATION_THRESHOLD", "0.3
 
 # Phase 2: LLM Insights Configuration
 PHASE2_ENABLED: bool = _env_bool("PHASE2_ENABLED", False)
+# Legacy single-file path (deprecated, use get_insights_output_path instead)
 INSIGHTS_OUTPUT_PATH: str = os.getenv("INSIGHTS_OUTPUT_PATH", "output/insights_output.json")
 LLM_MODE: str = os.getenv("LLM_MODE", "local")
 LLM_ENDPOINT_URL: str = os.getenv("LLM_ENDPOINT_URL", "http://localhost:11434")
@@ -231,6 +259,11 @@ __all__ = [
     "LOG_FORMAT",
     "setup_logging",
     "validate_config",
+    "OUTPUT_DIR",
+    "RUN_MODE",
+    "get_analysis_output_path",
+    "get_insights_output_path",
+    "get_clusters_to_run",
 ]
 
 
