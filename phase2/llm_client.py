@@ -5,7 +5,11 @@ Supports Ollama (local) and remote LLM APIs
 import json
 import logging
 import requests
+import urllib3
 from typing import Optional
+
+# Suppress InsecureRequestWarning when using verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +88,8 @@ class LLMClient:
             response = requests.post(
                 url,
                 json=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
+                verify=False
             )
             response.raise_for_status()
             
@@ -142,7 +147,8 @@ class LLMClient:
                 url,
                 json=payload,
                 headers=headers,
-                timeout=self.timeout
+                timeout=self.timeout,
+                verify=False
             )
             response.raise_for_status()
             
