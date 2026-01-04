@@ -4,9 +4,12 @@ Prometheus client for K8s metric queries
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import requests
+import urllib3
+
+# Suppress InsecureRequestWarning when using verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from config import (
     PROMETHEUS_URL, 
     PROMETHEUS_TIMEOUT_SECONDS, 
@@ -94,7 +97,8 @@ def query_range(query: str, minutes: int = None) -> List[Dict[str, Any]]:
     response = requests.get(
         f"{PROMETHEUS_URL}/api/v1/query_range",
         params=params,
-        timeout=PROMETHEUS_TIMEOUT_SECONDS
+        timeout=PROMETHEUS_TIMEOUT_SECONDS,
+        verify=False
     )
     
     if response.status_code == 200:
@@ -124,7 +128,8 @@ def query_instant(query: str) -> List[Dict[str, Any]]:
     response = requests.get(
         f"{PROMETHEUS_URL}/api/v1/query",
         params={'query': query},
-        timeout=PROMETHEUS_TIMEOUT_SECONDS
+        timeout=PROMETHEUS_TIMEOUT_SECONDS,
+        verify=False
     )
     
     if response.status_code == 200:
