@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-01-04T13:30:17.462026+00:00",
+  "analysis_reference": "output/local-kind_analysis_output.json",
+  "phase2_enabled": true,
+  "llm_mode": "local",
+  "llm_model": "llama3:8b",
+  "insights": {
+    "summary": "Cluster status summary here",
+    "deployment_review": {
+      "bursty": [],
+      "underutilized": [
+        "coredns (CPU and memory underutilized)"
+      ],
+      "memory_pressure": [],
+      "unsafe_to_resize": []
+    },
+    "hpa_review": {
+      "at_threshold": [],
+      "scaling_blocked": [],
+      "scaling_down": []
+    },
+    "node_fragmentation_review": {
+      "fragmented_nodes": [
+        "demo-control-plane (87% CPU, 90% memory fragmentation)"
+      ],
+      "large_request_pods": [],
+      "constraint_blockers": [],
+      "daemonset_overhead": [],
+      "scale_down_blockers": []
+    },
+    "cross_layer_risks": {
+      "high": [],
+      "medium": []
+    },
+    "limitations": []
+  }
+}

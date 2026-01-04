@@ -20,12 +20,12 @@ def analyze_hpas(hpas):
         name = hpa.get('name', 'unknown')
         namespace = hpa.get('namespace', 'default')
         
-        # Get HPA status and configuration
+        # Get HPA status and configuration - use correct metric name
         current_replicas = prom.query_instant(
-            f'kube_hpa_status_current_replicas{{hpa="{name}",namespace="{namespace}"}}'
+            f'kube_horizontalpodautoscaler_status_current_replicas{{horizontalpodautoscaler="{name}",namespace="{namespace}"}}'
         )
         desired_replicas = prom.query_instant(
-            f'kube_hpa_status_desired_replicas{{hpa="{name}",namespace="{namespace}"}}'
+            f'kube_horizontalpodautoscaler_status_desired_replicas{{horizontalpodautoscaler="{name}",namespace="{namespace}"}}'
         )
         
         current_val = _extract_value(current_replicas)
@@ -33,6 +33,17 @@ def analyze_hpas(hpas):
         
         min_replicas = hpa.get('min_replicas', 1)
         max_replicas = hpa.get('max_replicas', 10)
+        
+        # Get target info from Prometheus
+        target_info = prom.query_instant(
+            f'kube_horizontalpodautoscaler_info{{horizontalpodautoscaler="{name}",namespace="{namespace}"}}'
+        )
+        target_kind = 'Deployment'
+        target_name = None
+        if target_info:
+            labels = target_info[0].get('metric', {})
+            target_kind = labels.get('scaletargetref_kind', 'Deployment')
+            target_name = labels.get('scaletargetref_name')
         
         # Detect scaling issues
         flags = _compute_hpa_flags(current_val, desired_val, min_replicas, max_replicas)
@@ -58,8 +69,8 @@ def analyze_hpas(hpas):
                 'scaling_down_events': 0
             },
             'linked_resource_facts': {
-                'target_kind': 'Deployment',
-                'target_name': None
+                'target_kind': target_kind,
+                'target_name': target_name
             },
             'analysis_flags': flags,
             'safety_classification': _classify_hpa_safety(flags)

@@ -500,17 +500,17 @@
                         <tr>
                             <td><strong>{{ d.deployment.name }}</strong></td>
                             <td>{{ d.deployment.namespace }}</td>
-                            <td>{{ d.deployment.replicas.ready }}/{{ d.deployment.replicas.desired }}</td>
+                            <td>{{ d.resource_facts.pod_count or 0 }}/{{ d.deployment.replicas or d.deployment.desired_replicas or 1 }}</td>
                             <td>
-                                {% set cpu = d.request_allocation.cpu_utilization_percent %}
-                                <span class="badge {% if cpu > 90 %}badge-red{% elif cpu > 70 %}badge-yellow{% else %}badge-green{% endif %}">
-                                    {{ cpu }}%
+                                {% set cpu_avg = d.resource_facts.cpu_avg_cores or 0 %}
+                                <span class="badge badge-green">
+                                    {{ (cpu_avg * 1000) | round(1) }}m
                                 </span>
                             </td>
                             <td>
-                                {% set mem = d.request_allocation.memory_utilization_percent %}
-                                <span class="badge {% if mem > 90 %}badge-red{% elif mem > 70 %}badge-yellow{% else %}badge-green{% endif %}">
-                                    {{ mem }}%
+                                {% set mem_avg = d.resource_facts.memory_avg_bytes or 0 %}
+                                <span class="badge badge-green">
+                                    {{ (mem_avg / 1048576) | round(1) }} MiB
                                 </span>
                             </td>
                             <td>
@@ -518,13 +518,16 @@
                                     {% for flag in d.behavior_flags %}
                                     <span class="flag">{{ flag }}</span>
                                     {% endfor %}
+                                    {% if not d.behavior_flags %}
+                                    <span class="flag" style="background: var(--accent-green);">OK</span>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td>
-                                {% if d.unsafe_to_resize %}
-                                <span class="badge badge-red">⚠️ Unsafe</span>
+                                {% if d.insufficient_data %}
+                                <span class="badge badge-yellow">⚠️ Insufficient Data</span>
                                 {% else %}
-                                <span class="badge badge-green">✓ Safe</span>
+                                <span class="badge badge-green">✓ OK</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -540,27 +543,28 @@
                                             <div>
                                                 <h4 style="color: var(--accent-blue); margin-bottom: 10px;">CPU</h4>
                                                 <table>
-                                                    <tr><td>Average</td><td>{{ d.resource_usage.cpu.avg_cores }} cores</td></tr>
-                                                    <tr><td>P95</td><td>{{ d.resource_usage.cpu.p95_cores }} cores</td></tr>
-                                                    <tr><td>P99</td><td>{{ d.resource_usage.cpu.p99_cores }} cores</td></tr>
-                                                    <tr><td>Max</td><td>{{ d.resource_usage.cpu.max_cores }} cores</td></tr>
+                                                    <tr><td>Average</td><td>{{ ((d.resource_facts.cpu_avg_cores or 0) * 1000) | round(1) }}m</td></tr>
+                                                    <tr><td>P95</td><td>{{ ((d.resource_facts.cpu_p95_cores or 0) * 1000) | round(1) }}m</td></tr>
+                                                    <tr><td>P99</td><td>{{ ((d.resource_facts.cpu_p99_cores or 0) * 1000) | round(1) }}m</td></tr>
+                                                    <tr><td>Max</td><td>{{ ((d.resource_facts.cpu_p100_cores or 0) * 1000) | round(1) }}m</td></tr>
                                                 </table>
                                             </div>
                                             <div>
                                                 <h4 style="color: var(--accent-blue); margin-bottom: 10px;">Memory</h4>
                                                 <table>
-                                                    <tr><td>Average</td><td>{{ (d.resource_usage.memory.avg_bytes / 1048576) | round(1) }} MiB</td></tr>
-                                                    <tr><td>P95</td><td>{{ (d.resource_usage.memory.p95_bytes / 1048576) | round(1) }} MiB</td></tr>
-                                                    <tr><td>P99</td><td>{{ (d.resource_usage.memory.p99_bytes / 1048576) | round(1) }} MiB</td></tr>
-                                                    <tr><td>Max</td><td>{{ (d.resource_usage.memory.max_bytes / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>Average</td><td>{{ ((d.resource_facts.memory_avg_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>P95</td><td>{{ ((d.resource_facts.memory_p95_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>P99</td><td>{{ ((d.resource_facts.memory_p99_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>Max</td><td>{{ ((d.resource_facts.memory_p100_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
                                                 </table>
                                             </div>
                                         </div>
-                                        <h4 style="color: var(--accent-blue); margin: 15px 0 10px;">Request Allocation</h4>
-                                        <table>
-                                            <tr><td>CPU Requests</td><td>{{ d.request_allocation.cpu_requests }}</td></tr>
-                                            <tr><td>Memory Requests</td><td>{{ d.request_allocation.memory_requests }}</td></tr>
-                                        </table>
+                                        <h4 style="color: var(--accent-blue); margin: 15px 0 10px;">Evidence</h4>
+                                        <ul>
+                                            {% for e in d.evidence %}
+                                            <li>{{ e }}</li>
+                                            {% endfor %}
+                                        </ul>
                                     </div>
                                 </div>
                             </td>
@@ -579,30 +583,38 @@
                         <tr>
                             <th>Name</th>
                             <th>Namespace</th>
+                            <th>Target</th>
                             <th>Replicas (curr/min/max)</th>
-                            <th>CPU Target</th>
-                            <th>Scaling Status</th>
+                            <th>Status</th>
                             <th>Flags</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for h in analysis.hpa_analysis %}
                         <tr>
-                            <td><strong>{{ h.hpa.name }}</strong></td>
-                            <td>{{ h.hpa.namespace }}</td>
-                            <td>{{ h.scaling_config.current_replicas }} / {{ h.scaling_config.min_replicas }} / {{ h.scaling_config.max_replicas }}</td>
-                            <td>{{ h.scaling_behavior.current_load }}%</td>
+                            <td><strong>{{ h.hpa_name }}</strong></td>
+                            <td>{{ h.hpa_namespace }}</td>
+                            <td>{{ h.linked_resource_facts.target_kind }}/{{ h.linked_resource_facts.target_name or 'unknown' }}</td>
+                            <td>{{ h.scaling_behavior.current_replicas }} / {{ h.hpa_config_facts.min_replicas }} / {{ h.hpa_config_facts.max_replicas }}</td>
                             <td>
-                                {% set status = h.scaling_status %}
-                                <span class="badge {% if status == 'HEALTHY' %}badge-green{% elif status == 'CAUTION' %}badge-yellow{% else %}badge-red{% endif %}">
+                                {% set status = h.safety_classification %}
+                                <span class="badge {% if status == 'SAFE' %}badge-green{% elif status == 'CAUTION' %}badge-yellow{% else %}badge-red{% endif %}">
                                     {{ status }}
                                 </span>
+                                {% if h.scaling_behavior.at_min %}
+                                <span class="badge badge-blue" style="font-size: 0.7rem;">@ MIN</span>
+                                {% elif h.scaling_behavior.at_max %}
+                                <span class="badge badge-yellow" style="font-size: 0.7rem;">@ MAX</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <div class="flags">
-                                    {% for flag in h.scaling_flags %}
+                                    {% for flag in h.analysis_flags %}
                                     <span class="flag">{{ flag }}</span>
                                     {% endfor %}
+                                    {% if not h.analysis_flags %}
+                                    <span class="flag" style="background: var(--accent-green);">OK</span>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -643,37 +655,61 @@
                                 </span>
                             </td>
                             <td>
-                                {% set cpu_pct = ((n.utilization_facts.cpu_usage_cores / n.allocatable_facts.cpu_allocatable) * 100) | round(1) %}
+                                {% if n.allocatable_facts.cpu_allocatable and n.allocatable_facts.cpu_allocatable > 0 %}
+                                {% set cpu_pct = ((n.utilization_facts.cpu_usage_cores or 0) / n.allocatable_facts.cpu_allocatable * 100) | round(1) %}
                                 <span class="badge {% if cpu_pct > 90 %}badge-red{% elif cpu_pct > 70 %}badge-yellow{% else %}badge-green{% endif %}">
                                     {{ cpu_pct }}%
                                 </span>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                    {{ n.utilization_facts.cpu_usage_cores | round(2) }} / {{ n.allocatable_facts.cpu_allocatable }} cores
+                                    {{ (n.utilization_facts.cpu_usage_cores or 0) | round(2) }} / {{ n.allocatable_facts.cpu_allocatable }} cores
                                 </div>
+                                {% else %}
+                                <span class="badge badge-gray">N/A</span>
+                                {% endif %}
                             </td>
                             <td>
-                                {% set mem_pct = ((n.utilization_facts.memory_usage_bytes / n.allocatable_facts.memory_allocatable) * 100) | round(1) %}
+                                {% if n.allocatable_facts.memory_allocatable and n.allocatable_facts.memory_allocatable > 0 %}
+                                {% set mem_pct = ((n.utilization_facts.memory_usage_bytes or 0) / n.allocatable_facts.memory_allocatable * 100) | round(1) %}
                                 <span class="badge {% if mem_pct > 90 %}badge-red{% elif mem_pct > 70 %}badge-yellow{% else %}badge-green{% endif %}">
                                     {{ mem_pct }}%
                                 </span>
                                 <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                    {{ (n.utilization_facts.memory_usage_bytes / 1073741824) | round(2) }} / {{ (n.allocatable_facts.memory_allocatable / 1073741824) | round(2) }} GiB
+                                    {{ ((n.utilization_facts.memory_usage_bytes or 0) / 1073741824) | round(2) }} / {{ (n.allocatable_facts.memory_allocatable / 1073741824) | round(2) }} GiB
                                 </div>
+                                {% else %}
+                                <span class="badge badge-gray">N/A</span>
+                                {% endif %}
                             </td>
-                            <td>{{ n.utilization_facts.pod_count }} / {{ n.allocatable_facts.pods_allocatable }}</td>
+                            <td>{{ n.utilization_facts.pod_count or 0 }} / {{ n.allocatable_facts.pods_allocatable or 'N/A' }}</td>
                             <td>
                                 {% set eff = n.fragmentation_analysis.pod_packing_efficiency %}
+                                {% if eff is not none %}
                                 <span class="badge {% if eff >= 0.8 %}badge-green{% elif eff >= 0.6 %}badge-yellow{% else %}badge-red{% endif %}">
                                     {{ (eff * 100) | round(1) }}%
                                 </span>
+                                {% else %}
+                                <span class="badge badge-gray">N/A</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% set cpu_frag = n.fragmentation_analysis.cpu_fragmentation %}
                                 {% set mem_frag = n.fragmentation_analysis.memory_fragmentation %}
+                                {% if cpu_frag is not none or mem_frag is not none %}
                                 <div style="font-size: 0.85rem;">
+                                    {% if cpu_frag is not none %}
                                     <span class="{% if cpu_frag > 0.3 %}badge badge-yellow{% endif %}">CPU: {{ (cpu_frag * 100) | round(1) }}%</span><br>
+                                    {% else %}
+                                    <span>CPU: N/A</span><br>
+                                    {% endif %}
+                                    {% if mem_frag is not none %}
                                     <span class="{% if mem_frag > 0.3 %}badge badge-yellow{% endif %}">Mem: {{ (mem_frag * 100) | round(1) }}%</span>
+                                    {% else %}
+                                    <span>Mem: N/A</span>
+                                    {% endif %}
                                 </div>
+                                {% else %}
+                                <span class="badge badge-gray">N/A</span>
+                                {% endif %}
                                 {% if n.fragmentation_attribution %}
                                 <button class="drill-btn" style="margin-top: 5px;" onclick="toggleDrill('frag-{{ loop.index }}')">Attribution</button>
                                 {% endif %}

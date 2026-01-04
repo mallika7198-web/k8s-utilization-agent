@@ -44,8 +44,8 @@ def analyze_deployments(deployments):
         
         # Compute utilization flags
         flags = _compute_behavior_flags(
-            cpu_avg, cpu_p95, cpu_p99,
-            mem_avg, mem_p95, mem_p99,
+            cpu_avg, cpu_p95, cpu_p99, cpu_p100,
+            mem_avg, mem_p95, mem_p99, mem_p100,
             replicas, pod_count_val
         )
         
@@ -86,7 +86,7 @@ def analyze_deployments(deployments):
     return analysis
 
 
-def _compute_behavior_flags(cpu_avg, cpu_p95, cpu_p99, mem_avg, mem_p95, mem_p99, replicas, pod_count):
+def _compute_behavior_flags(cpu_avg, cpu_p95, cpu_p99, cpu_p100, mem_avg, mem_p95, mem_p99, mem_p100, replicas, pod_count):
     """Determine behavioral flags based on resource usage patterns"""
     flags = []
     

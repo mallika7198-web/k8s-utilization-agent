@@ -1,0 +1,641 @@
+{
+  "generated_at": "2026-01-04T13:22:43.602933+00:00",
+  "cluster_info": {
+    "cluster_name": "local-kind",
+    "project": "local",
+    "environment": "local",
+    "owner": "test",
+    "prometheus_url": "http://localhost:9090"
+  },
+  "cluster_summary": {
+    "deployment_count": 6,
+    "hpa_count": 4,
+    "node_count": 1
+  },
+  "analysis_scope": {
+    "deployments": {},
+    "hpas": {},
+    "nodes": {}
+  },
+  "deployment_analysis": [
+    {
+      "deployment": {
+        "name": "prom-kube-state-metrics",
+        "namespace": "monitoring",
+        "replicas": 1,
+        "desired_replicas": 1
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "1 pod(s) found for deployment prom-kube-state-metrics",
+        "3 CPU metric points collected",
+        "3 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.0005,
+        "cpu_p95_cores": 0.0009,
+        "cpu_p99_cores": 0.001,
+        "cpu_p100_cores": 0.001,
+        "memory_avg_bytes": 34184874,
+        "memory_p95_bytes": 73035776,
+        "memory_p99_bytes": 73039872,
+        "memory_p100_bytes": 73039872,
+        "pod_count": 1
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.0005,
+        "memory_per_pod": 34184874,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {
+        "single_replica": "No high availability"
+      }
+    },
+    {
+      "deployment": {
+        "name": "prom-prometheus-server",
+        "namespace": "monitoring",
+        "replicas": 1,
+        "desired_replicas": 1
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "1 pod(s) found for deployment prom-prometheus-server",
+        "4 CPU metric points collected",
+        "4 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.0011,
+        "cpu_p95_cores": 0.0023,
+        "cpu_p99_cores": 0.0025,
+        "cpu_p100_cores": 0.0025,
+        "memory_avg_bytes": 178965888,
+        "memory_p95_bytes": 359575552,
+        "memory_p99_bytes": 386162688,
+        "memory_p100_bytes": 386162688,
+        "pod_count": 1
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.0011,
+        "memory_per_pod": 178965888,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {
+        "single_replica": "No high availability"
+      }
+    },
+    {
+      "deployment": {
+        "name": "web-b",
+        "namespace": "metrics-demo",
+        "replicas": 2,
+        "desired_replicas": 2
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "2 pod(s) found for deployment web-b",
+        "6 CPU metric points collected",
+        "6 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.2667,
+        "cpu_p95_cores": 0.4001,
+        "cpu_p99_cores": 0.4001,
+        "cpu_p100_cores": 0.4001,
+        "memory_avg_bytes": 116514816,
+        "memory_p95_bytes": 175730688,
+        "memory_p99_bytes": 175730688,
+        "memory_p100_bytes": 175730688,
+        "pod_count": 2
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.1333,
+        "memory_per_pod": 58257408,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {}
+    },
+    {
+      "deployment": {
+        "name": "prom-prometheus-pushgateway",
+        "namespace": "monitoring",
+        "replicas": 1,
+        "desired_replicas": 1
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "1 pod(s) found for deployment prom-prometheus-pushgateway",
+        "3 CPU metric points collected",
+        "3 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.0001,
+        "cpu_p95_cores": 0.0003,
+        "cpu_p99_cores": 0.0003,
+        "cpu_p100_cores": 0.0003,
+        "memory_avg_bytes": 19227648,
+        "memory_p95_bytes": 29773824,
+        "memory_p99_bytes": 29904896,
+        "memory_p100_bytes": 29904896,
+        "pod_count": 1
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.0001,
+        "memory_per_pod": 19227648,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {
+        "single_replica": "No high availability"
+      }
+    },
+    {
+      "deployment": {
+        "name": "coredns",
+        "namespace": "kube-system",
+        "replicas": 2,
+        "desired_replicas": 2
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "2 pod(s) found for deployment coredns",
+        "6 CPU metric points collected",
+        "6 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.0008,
+        "cpu_p95_cores": 0.0012,
+        "cpu_p99_cores": 0.0013,
+        "cpu_p100_cores": 0.0013,
+        "memory_avg_bytes": 34179882,
+        "memory_p95_bytes": 56791040,
+        "memory_p99_bytes": 57208832,
+        "memory_p100_bytes": 57208832,
+        "pod_count": 2
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.0004,
+        "memory_per_pod": 17089941,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [
+        "CPU_UNDERUTILIZED",
+        "MEMORY_UNDERUTILIZED"
+      ],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {}
+    },
+    {
+      "deployment": {
+        "name": "local-path-provisioner",
+        "namespace": "local-path-storage",
+        "replicas": 1,
+        "desired_replicas": 1
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "1 pod(s) found for deployment local-path-provisioner",
+        "3 CPU metric points collected",
+        "3 memory metric points collected"
+      ],
+      "resource_facts": {
+        "cpu_avg_cores": 0.0001,
+        "cpu_p95_cores": 0.0002,
+        "cpu_p99_cores": 0.0002,
+        "cpu_p100_cores": 0.0002,
+        "memory_avg_bytes": 23930282,
+        "memory_p95_bytes": 53006336,
+        "memory_p99_bytes": 53006336,
+        "memory_p100_bytes": 53006336,
+        "pod_count": 1
+      },
+      "derived_metrics": {
+        "cpu_per_pod": 0.0001,
+        "memory_per_pod": 23930282,
+        "replica_efficiency": 1.0
+      },
+      "behavior_flags": [],
+      "scheduling_facts": {
+        "scheduler_healthy": true,
+        "pod_disruption_budgets": null,
+        "affinity_rules": null
+      },
+      "edge_cases": {
+        "single_replica": "No high availability"
+      }
+    }
+  ],
+  "hpa_analysis": [
+    {
+      "hpa_name": "web-a-hpa",
+      "hpa_namespace": "metrics-demo",
+      "hpa_enabled": true,
+      "insufficient_data": false,
+      "evidence": [
+        "HPA web-a-hpa currently has 1 replicas",
+        "HPA web-a-hpa desires 0 replicas (currently 1)"
+      ],
+      "hpa_config_facts": {
+        "min_replicas": 1,
+        "max_replicas": 5,
+        "metric_type": "cpu",
+        "target_utilization": null
+      },
+      "scaling_behavior": {
+        "current_replicas": 1,
+        "desired_replicas": 0,
+        "at_min": true,
+        "at_max": false,
+        "scaling_up_events": 0,
+        "scaling_down_events": 0
+      },
+      "linked_resource_facts": {
+        "target_kind": "Deployment",
+        "target_name": "web-a"
+      },
+      "analysis_flags": [
+        "SCALING_BELOW_MIN",
+        "AT_MIN_REPLICAS"
+      ],
+      "safety_classification": "CAUTION"
+    },
+    {
+      "hpa_name": "api-a-hpa",
+      "hpa_namespace": "metrics-demo",
+      "hpa_enabled": true,
+      "insufficient_data": false,
+      "evidence": [
+        "HPA api-a-hpa currently has 1 replicas",
+        "HPA api-a-hpa desires 0 replicas (currently 1)"
+      ],
+      "hpa_config_facts": {
+        "min_replicas": 1,
+        "max_replicas": 10,
+        "metric_type": "cpu",
+        "target_utilization": null
+      },
+      "scaling_behavior": {
+        "current_replicas": 1,
+        "desired_replicas": 0,
+        "at_min": true,
+        "at_max": false,
+        "scaling_up_events": 0,
+        "scaling_down_events": 0
+      },
+      "linked_resource_facts": {
+        "target_kind": "Deployment",
+        "target_name": "api-a"
+      },
+      "analysis_flags": [
+        "SCALING_BELOW_MIN",
+        "AT_MIN_REPLICAS"
+      ],
+      "safety_classification": "CAUTION"
+    },
+    {
+      "hpa_name": "web-b-hpa",
+      "hpa_namespace": "metrics-demo",
+      "hpa_enabled": true,
+      "insufficient_data": false,
+      "evidence": [
+        "HPA web-b-hpa currently has 2 replicas",
+        "HPA web-b-hpa desires 0 replicas (currently 2)"
+      ],
+      "hpa_config_facts": {
+        "min_replicas": 2,
+        "max_replicas": 8,
+        "metric_type": "cpu",
+        "target_utilization": null
+      },
+      "scaling_behavior": {
+        "current_replicas": 2,
+        "desired_replicas": 0,
+        "at_min": true,
+        "at_max": false,
+        "scaling_up_events": 0,
+        "scaling_down_events": 0
+      },
+      "linked_resource_facts": {
+        "target_kind": "Deployment",
+        "target_name": "web-b"
+      },
+      "analysis_flags": [
+        "SCALING_BELOW_MIN",
+        "AT_MIN_REPLICAS"
+      ],
+      "safety_classification": "CAUTION"
+    },
+    {
+      "hpa_name": "worker-a-hpa",
+      "hpa_namespace": "metrics-demo",
+      "hpa_enabled": true,
+      "insufficient_data": false,
+      "evidence": [
+        "HPA worker-a-hpa currently has 1 replicas",
+        "HPA worker-a-hpa desires 0 replicas (currently 1)"
+      ],
+      "hpa_config_facts": {
+        "min_replicas": 1,
+        "max_replicas": 15,
+        "metric_type": "cpu",
+        "target_utilization": null
+      },
+      "scaling_behavior": {
+        "current_replicas": 1,
+        "desired_replicas": 0,
+        "at_min": true,
+        "at_max": false,
+        "scaling_up_events": 0,
+        "scaling_down_events": 0
+      },
+      "linked_resource_facts": {
+        "target_kind": "Deployment",
+        "target_name": "worker-a"
+      },
+      "analysis_flags": [
+        "SCALING_BELOW_MIN",
+        "AT_MIN_REPLICAS"
+      ],
+      "safety_classification": "CAUTION"
+    }
+  ],
+  "node_analysis": [
+    {
+      "node": {
+        "name": "demo-control-plane",
+        "labels": {
+          "__name__": "node_uname_info",
+          "app_kubernetes_io_component": "metrics",
+          "app_kubernetes_io_instance": "prom",
+          "app_kubernetes_io_managed_by": "Helm",
+          "app_kubernetes_io_name": "prometheus-node-exporter",
+          "app_kubernetes_io_part_of": "prometheus-node-exporter",
+          "app_kubernetes_io_version": "1.10.2",
+          "domainname": "(none)",
+          "helm_sh_chart": "prometheus-node-exporter-4.49.2",
+          "instance": "172.18.0.2:9100",
+          "job": "kubernetes-service-endpoints",
+          "machine": "aarch64",
+          "namespace": "monitoring",
+          "node": "demo-control-plane",
+          "nodename": "demo-control-plane",
+          "release": "6.10.14-linuxkit",
+          "service": "prom-prometheus-node-exporter",
+          "sysname": "Linux",
+          "version": "#1 SMP Sat May 17 08:28:57 UTC 2025"
+        }
+      },
+      "insufficient_data": false,
+      "evidence": [
+        "Node demo-control-plane has 16.0 pods scheduled",
+        "CPU allocatable: 11.0 cores",
+        "Memory allocatable: 7.65 GiB"
+      ],
+      "capacity_facts": {
+        "cpu_cores": 11.0,
+        "memory_bytes": 8217890816.0,
+        "ephemeral_storage_bytes": null,
+        "pods_max": 110
+      },
+      "allocatable_facts": {
+        "cpu_allocatable": 11.0,
+        "memory_allocatable": 8217890816.0,
+        "pods_allocatable": 110
+      },
+      "request_facts": {
+        "cpu_requested_total": 1.35,
+        "memory_requested_total": 840957952.0,
+        "pods_requested_count": 16.0
+      },
+      "utilization_facts": {
+        "cpu_usage_cores": 0.9532174956192191,
+        "memory_usage_bytes": 1701273600.0,
+        "memory_available_bytes": 6516617216.0,
+        "pod_count": 16.0
+      },
+      "fragmentation_analysis": {
+        "pod_packing_efficiency": 0.14545454545454545,
+        "memory_fragmentation": 0.8976674221124137,
+        "cpu_fragmentation": 0.8772727272727273
+      },
+      "scheduling_facts": {},
+      "node_conditions": {
+        "ready": true,
+        "memory_pressure": false,
+        "disk_pressure": false,
+        "pid_pressure": false
+      },
+      "fragmentation_attribution": {
+        "large_request_pods": [],
+        "constraint_blockers": [
+          {
+            "pod_name": "local-path-provisioner-67b8995b4b-llb82",
+            "namespace": "local-path-storage",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "local-path-provisioner-67b8995b4b",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "coredns-7d764666f9-2lswm",
+            "namespace": "kube-system",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "coredns-7d764666f9",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "web-b-9b6c874c7-8n65k",
+            "namespace": "metrics-demo",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "web-b-9b6c874c7",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "prom-alertmanager-0",
+            "namespace": "monitoring",
+            "workload_kind": "StatefulSet",
+            "workload_name": "prom-alertmanager",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "kube-controller-manager-demo-control-plane",
+            "namespace": "kube-system",
+            "workload_kind": "Node",
+            "workload_name": "demo-control-plane",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "kube-proxy-qmwdv",
+            "namespace": "kube-system",
+            "workload_kind": "DaemonSet",
+            "workload_name": "kube-proxy",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "prom-prometheus-server-774dd5448c-sgqxm",
+            "namespace": "monitoring",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "prom-prometheus-server-774dd5448c",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "web-b-9b6c874c7-xbjpr",
+            "namespace": "metrics-demo",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "web-b-9b6c874c7",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "coredns-7d764666f9-jt9n5",
+            "namespace": "kube-system",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "coredns-7d764666f9",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          },
+          {
+            "pod_name": "prom-prometheus-node-exporter-65zc4",
+            "namespace": "monitoring",
+            "workload_kind": "DaemonSet",
+            "workload_name": "prom-prometheus-node-exporter",
+            "constraints": [],
+            "constraint_visibility": "unknown"
+          }
+        ],
+        "daemonset_overhead": {
+          "cpu_percent": 0.0,
+          "memory_percent": 0.0,
+          "exceeds_threshold": false,
+          "contributing_daemonsets": []
+        },
+        "scale_down_blockers": [
+          {
+            "pod_name": "local-path-provisioner-67b8995b4b-llb82",
+            "namespace": "local-path-storage",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "local-path-provisioner-67b8995b4b",
+            "request_cpu": 0,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.000, Memory: 0.00GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "coredns-7d764666f9-2lswm",
+            "namespace": "kube-system",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "coredns-7d764666f9",
+            "request_cpu": 0.1,
+            "request_memory": 73400320.0,
+            "blocking_reason": "Pod requests (CPU: 0.100, Memory: 0.07GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "web-b-9b6c874c7-8n65k",
+            "namespace": "metrics-demo",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "web-b-9b6c874c7",
+            "request_cpu": 0.2,
+            "request_memory": 268435456.0,
+            "blocking_reason": "Pod requests (CPU: 0.200, Memory: 0.25GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "prom-alertmanager-0",
+            "namespace": "monitoring",
+            "workload_kind": "StatefulSet",
+            "workload_name": "prom-alertmanager",
+            "request_cpu": 0,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.000, Memory: 0.00GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "kube-controller-manager-demo-control-plane",
+            "namespace": "kube-system",
+            "workload_kind": "Node",
+            "workload_name": "demo-control-plane",
+            "request_cpu": 0.2,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.200, Memory: 0.00GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "kube-proxy-qmwdv",
+            "namespace": "kube-system",
+            "workload_kind": "DaemonSet",
+            "workload_name": "kube-proxy",
+            "request_cpu": 0,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.000, Memory: 0.00GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "prom-prometheus-server-774dd5448c-sgqxm",
+            "namespace": "monitoring",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "prom-prometheus-server-774dd5448c",
+            "request_cpu": 0,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.000, Memory: 0.00GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "web-b-9b6c874c7-xbjpr",
+            "namespace": "metrics-demo",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "web-b-9b6c874c7",
+            "request_cpu": 0.2,
+            "request_memory": 268435456.0,
+            "blocking_reason": "Pod requests (CPU: 0.200, Memory: 0.25GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "coredns-7d764666f9-jt9n5",
+            "namespace": "kube-system",
+            "workload_kind": "ReplicaSet",
+            "workload_name": "coredns-7d764666f9",
+            "request_cpu": 0.1,
+            "request_memory": 73400320.0,
+            "blocking_reason": "Pod requests (CPU: 0.100, Memory: 0.07GiB) cannot fit on any other node"
+          },
+          {
+            "pod_name": "prom-prometheus-node-exporter-65zc4",
+            "namespace": "monitoring",
+            "workload_kind": "DaemonSet",
+            "workload_name": "prom-prometheus-node-exporter",
+            "request_cpu": 0,
+            "request_memory": 0,
+            "blocking_reason": "Pod requests (CPU: 0.000, Memory: 0.00GiB) cannot fit on any other node"
+          }
+        ]
+      }
+    }
+  ],
+  "cross_layer_observations": []
+}

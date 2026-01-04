@@ -131,5 +131,53 @@
     ],
     "change_type": "ui_update",
     "description": "Multi-cluster UI support: Added cluster selector dropdown in header, displays cluster info (name, environment, project, owner). Loads cluster-specific output files. Added /api/clusters endpoint. Updated /api/analysis and /api/insights to accept ?cluster= parameter. Updated /ready to show available clusters. Backward compatible with legacy single-file paths. All 102 tests passing."
+  },
+  {
+    "timestamp": "2026-01-04T13:04:17.416846Z",
+    "files_modified": [
+      "output/local-kind_analysis_output.json"
+    ],
+    "change_type": "analysis",
+    "description": "Orchestrator run: 1 cluster(s) analyzed (mode=active)"
+  },
+  {
+    "timestamp": "2026-01-04T13:04:23.950377Z",
+    "files_modified": [
+      "output/local-kind_analysis_output.json"
+    ],
+    "change_type": "analysis",
+    "description": "Orchestrator run: 1 cluster(s) analyzed (mode=active)"
+  },
+  {
+    "timestamp": "2026-01-04T13:10:43.197813Z",
+    "files_modified": [
+      "output/local-kind_insights_output.json"
+    ],
+    "change_type": "phase2_insights",
+    "description": "Phase 2 LLM insights: 1 cluster(s) (local mode, llama3:8b)"
+  },
+  {
+    "timestamp": "2026-01-04T13:15:25.480001Z",
+    "files_modified": [
+      "output/local-kind_analysis_output.json"
+    ],
+    "change_type": "analysis",
+    "description": "Orchestrator run: 1 cluster(s) analyzed (mode=active)"
+  },
+  {
+    "timestamp": "2026-01-04T13:22:43.605278Z",
+    "files_modified": [
+      "output/local-kind_analysis_output.json"
+    ],
+    "change_type": "analysis",
+    "description": "Orchestrator run: 1 cluster(s) analyzed (mode=active)"
+  },
+  {
+    "timestamp": "2026-01-04T13:30:17.463983Z",
+    "files_modified": [
+      "output/local-kind_insights_output.json"
+    ],
+    "change_type": "phase2_insights",
+    "description": "Phase 2 LLM insights: 1 cluster(s) (local mode, llama3:8b)"
   }
 ]

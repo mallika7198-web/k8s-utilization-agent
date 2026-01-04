@@ -81,10 +81,11 @@ def query_range(query: str, minutes: int = None) -> List[Dict[str, Any]]:
     end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(minutes=minutes)
     
+    # Use Unix timestamps for Prometheus (most reliable format)
     params = {
         'query': query,
-        'start': start_time.isoformat() + 'Z',
-        'end': end_time.isoformat() + 'Z',
+        'start': start_time.timestamp(),
+        'end': end_time.timestamp(),
         'step': '1m'
     }
     

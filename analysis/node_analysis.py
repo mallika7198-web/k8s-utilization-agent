@@ -30,53 +30,135 @@ def analyze_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             f'count(kube_pod_info{{node="{name}"}}) by (node)'
         )
         node_cpu_usage = prom.query_range(
-            f'rate(node_cpu_seconds_total{{node="{name}"}}[5m])'
+            f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*"}}[5m]))'
         )
-        node_memory_usage = prom.query_range(
-            f'node_memory_MemAvailable_bytes{{node="{name}"}}'
+        node_memory_avail = prom.query_instant(
+            f'node_memory_MemAvailable_bytes'
+        )
+        node_memory_total = prom.query_instant(
+            f'node_memory_MemTotal_bytes'
+        )
+        
+        # Get allocatable from kube-state-metrics
+        cpu_allocatable = prom.query_instant(
+            f'kube_node_status_allocatable{{node="{name}",resource="cpu"}}'
+        )
+        memory_allocatable = prom.query_instant(
+            f'kube_node_status_allocatable{{node="{name}",resource="memory"}}'
+        )
+        pods_allocatable = prom.query_instant(
+            f'kube_node_status_allocatable{{node="{name}",resource="pods"}}'
+        )
+        
+        # Get capacity from kube-state-metrics
+        cpu_capacity = prom.query_instant(
+            f'kube_node_status_capacity{{node="{name}",resource="cpu"}}'
+        )
+        memory_capacity = prom.query_instant(
+            f'kube_node_status_capacity{{node="{name}",resource="memory"}}'
+        )
+        pods_capacity = prom.query_instant(
+            f'kube_node_status_capacity{{node="{name}",resource="pods"}}'
+        )
+        
+        # Get requests from pods on this node
+        cpu_requests = prom.query_instant(
+            f'sum(kube_pod_container_resource_requests{{node="{name}",resource="cpu"}})'
+        )
+        memory_requests = prom.query_instant(
+            f'sum(kube_pod_container_resource_requests{{node="{name}",resource="memory"}})'
+        )
+        
+        # Get node conditions
+        node_ready = prom.query_instant(
+            f'kube_node_status_condition{{node="{name}",condition="Ready",status="true"}}'
+        )
+        memory_pressure = prom.query_instant(
+            f'kube_node_status_condition{{node="{name}",condition="MemoryPressure",status="true"}}'
+        )
+        disk_pressure = prom.query_instant(
+            f'kube_node_status_condition{{node="{name}",condition="DiskPressure",status="true"}}'
+        )
+        pid_pressure = prom.query_instant(
+            f'kube_node_status_condition{{node="{name}",condition="PIDPressure",status="true"}}'
         )
         
         pod_count_val = _extract_value(pod_count)
+        cpu_alloc_val = _extract_value(cpu_allocatable)
+        mem_alloc_val = _extract_value(memory_allocatable)
+        pods_alloc_val = _extract_value(pods_allocatable)
+        cpu_cap_val = _extract_value(cpu_capacity)
+        mem_cap_val = _extract_value(memory_capacity)
+        pods_cap_val = _extract_value(pods_capacity)
+        cpu_req_val = _extract_value(cpu_requests)
+        mem_req_val = _extract_value(memory_requests)
+        mem_avail_val = _extract_value(node_memory_avail)
+        mem_total_val = _extract_value(node_memory_total)
+        
+        # Compute CPU usage from rate
+        cpu_usage_val = _compute_avg_from_range(node_cpu_usage)
+        
+        # Compute memory usage from total - available
+        mem_usage_val = None
+        if mem_total_val and mem_avail_val:
+            mem_usage_val = mem_total_val - mem_avail_val
+        
+        # Compute fragmentation metrics
+        cpu_frag = None
+        mem_frag = None
+        packing_eff = None
+        
+        if cpu_alloc_val and cpu_req_val:
+            # Fragmentation = (allocatable - requested) / allocatable
+            # High fragmentation = lots of unused allocatable capacity
+            cpu_frag = max(0, (cpu_alloc_val - cpu_req_val) / cpu_alloc_val) if cpu_alloc_val > 0 else None
+        
+        if mem_alloc_val and mem_req_val:
+            mem_frag = max(0, (mem_alloc_val - mem_req_val) / mem_alloc_val) if mem_alloc_val > 0 else None
+        
+        if pods_alloc_val and pod_count_val:
+            packing_eff = pod_count_val / pods_alloc_val if pods_alloc_val > 0 else None
         
         node_analysis = {
             'node': {
                 'name': name,
                 'labels': node.get('labels', {})
             },
-            'insufficient_data': pod_count_val is None,
-            'evidence': _build_node_evidence(name, pod_count_val),
+            'insufficient_data': cpu_alloc_val is None and mem_alloc_val is None,
+            'evidence': _build_node_evidence(name, pod_count_val, cpu_alloc_val, mem_alloc_val),
             'capacity_facts': {
-                'cpu_cores': None,
-                'memory_bytes': None,
+                'cpu_cores': cpu_cap_val,
+                'memory_bytes': mem_cap_val,
                 'ephemeral_storage_bytes': None,
-                'pods_max': 110
+                'pods_max': int(pods_cap_val) if pods_cap_val else 110
             },
             'allocatable_facts': {
-                'cpu_allocatable': None,
-                'memory_allocatable': None,
-                'pods_allocatable': 110
+                'cpu_allocatable': cpu_alloc_val,
+                'memory_allocatable': mem_alloc_val,
+                'pods_allocatable': int(pods_alloc_val) if pods_alloc_val else 110
             },
             'request_facts': {
-                'cpu_requested_total': None,
-                'memory_requested_total': None,
+                'cpu_requested_total': cpu_req_val,
+                'memory_requested_total': mem_req_val,
                 'pods_requested_count': pod_count_val or 0
             },
             'utilization_facts': {
-                'cpu_usage_cores': _compute_avg_from_range(node_cpu_usage),
-                'memory_available_bytes': _extract_value(node_memory_usage) if node_memory_usage else None,
+                'cpu_usage_cores': cpu_usage_val,
+                'memory_usage_bytes': mem_usage_val,
+                'memory_available_bytes': mem_avail_val,
                 'pod_count': pod_count_val or 0
             },
             'fragmentation_analysis': {
-                'pod_packing_efficiency': None,
-                'memory_fragmentation': None,
-                'cpu_fragmentation': None
+                'pod_packing_efficiency': packing_eff,
+                'memory_fragmentation': mem_frag,
+                'cpu_fragmentation': cpu_frag
             },
             'scheduling_facts': _analyze_scheduling(name, pod_count_val),
             'node_conditions': {
-                'ready': True,
-                'memory_pressure': False,
-                'disk_pressure': False,
-                'pid_pressure': False
+                'ready': _extract_value(node_ready) == 1,
+                'memory_pressure': _extract_value(memory_pressure) == 1,
+                'disk_pressure': _extract_value(disk_pressure) == 1,
+                'pid_pressure': _extract_value(pid_pressure) == 1
             }
         }
         
@@ -130,7 +212,7 @@ def _analyze_scheduling(node_name, pod_count):
     return conditions
 
 
-def _build_node_evidence(name, pod_count):
+def _build_node_evidence(name, pod_count, cpu_alloc, mem_alloc):
     """Build evidence statements about node"""
     evidence = []
     
@@ -138,6 +220,13 @@ def _build_node_evidence(name, pod_count):
         evidence.append(f'Unable to determine pod count for node {name}')
     else:
         evidence.append(f'Node {name} has {pod_count} pods scheduled')
+    
+    if cpu_alloc:
+        evidence.append(f'CPU allocatable: {cpu_alloc} cores')
+    
+    if mem_alloc:
+        mem_gb = mem_alloc / (1024**3)
+        evidence.append(f'Memory allocatable: {mem_gb:.2f} GiB')
     
     return evidence
 

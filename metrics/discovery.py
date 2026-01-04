@@ -11,8 +11,13 @@ def discover_deployments():
     """
     deployments_dict = {}
     
-    # Try multiple metric sources
-    for metric_name in ['kube_deployment_labels', 'kube_deployment_info', 'container_last_seen']:
+    # Try multiple metric sources - prioritize kube-state-metrics
+    for metric_name in [
+        'kube_deployment_spec_replicas',
+        'kube_deployment_status_replicas',
+        'kube_deployment_labels', 
+        'kube_deployment_info'
+    ]:
         try:
             metrics = prom.query_instant(metric_name)
             for metric in metrics:
@@ -23,10 +28,18 @@ def discover_deployments():
                 if deployment:
                     key = f"{namespace}/{deployment}"
                     if key not in deployments_dict:
+                        # Get replicas from the metric value if this is a replicas metric
+                        replicas = 1
+                        if 'replicas' in metric_name:
+                            value = metric.get('value', [None, None])[1]
+                            replicas = int(float(value)) if value else 1
+                        else:
+                            replicas = _get_deployment_replicas(deployment, namespace)
+                        
                         deployments_dict[key] = {
                             'name': deployment,
                             'namespace': namespace,
-                            'replicas': _get_deployment_replicas(deployment, namespace)
+                            'replicas': replicas
                         }
         except Exception:
             continue
@@ -44,23 +57,33 @@ def discover_hpas():
     """
     hpas = {}
     
-    # Try multiple metric sources
-    for metric_name in ['kube_hpa_labels', 'kube_hpa_info']:
+    # Try multiple metric sources - prioritize kube-state-metrics
+    for metric_name in [
+        'kube_horizontalpodautoscaler_spec_max_replicas',
+        'kube_horizontalpodautoscaler_info',
+        'kube_hpa_labels', 
+        'kube_hpa_info'
+    ]:
         try:
             metrics = prom.query_instant(metric_name)
             for metric in metrics:
                 labels = metric.get('metric', {})
-                hpa_name = labels.get('hpa')
+                # HPA name can be under different keys
+                hpa_name = labels.get('horizontalpodautoscaler') or labels.get('hpa')
                 namespace = labels.get('namespace') or 'default'
                 
                 if hpa_name:
                     key = f"{namespace}/{hpa_name}"
                     if key not in hpas:
+                        # Get min/max replicas from Prometheus
+                        min_replicas = _get_hpa_min_replicas(hpa_name, namespace)
+                        max_replicas = _get_hpa_max_replicas(hpa_name, namespace)
+                        
                         hpas[key] = {
                             'name': hpa_name,
                             'namespace': namespace,
-                            'min_replicas': 1,
-                            'max_replicas': 10
+                            'min_replicas': min_replicas,
+                            'max_replicas': max_replicas
                         }
         except Exception:
             continue
@@ -122,6 +145,31 @@ def _get_deployment_replicas(deployment: str, namespace: str):
         pass
     
     return 1
-    if result:
-        return int(float(result[0].get('value', [0, '0'])[1]))
-    return 0
+
+
+def _get_hpa_min_replicas(hpa_name: str, namespace: str):
+    """Get min replicas for HPA"""
+    try:
+        query = f'kube_horizontalpodautoscaler_spec_min_replicas{{horizontalpodautoscaler="{hpa_name}",namespace="{namespace}"}}'
+        result = prom.query_instant(query)
+        if result:
+            value = result[0].get('value', [None, None])[1]
+            return int(float(value)) if value else 1
+    except Exception:
+        pass
+    
+    return 1
+
+
+def _get_hpa_max_replicas(hpa_name: str, namespace: str):
+    """Get max replicas for HPA"""
+    try:
+        query = f'kube_horizontalpodautoscaler_spec_max_replicas{{horizontalpodautoscaler="{hpa_name}",namespace="{namespace}"}}'
+        result = prom.query_instant(query)
+        if result:
+            value = result[0].get('value', [None, None])[1]
+            return int(float(value)) if value else 10
+    except Exception:
+        pass
+    
+    return 10

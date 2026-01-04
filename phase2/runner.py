@@ -98,16 +98,10 @@ def run_once_for_cluster(analysis_path: str, insights_path: str) -> Dict[str, An
     
     logger.info(f"Loaded {len(json.dumps(analysis_output)):,} bytes")
     
-    # 2. Prepare LLM input
+    # 2. Prepare LLM input - simplified for local models
     logger.info("Preparing LLM input...")
-    llm_input = {
-        'analysis_data': analysis_output,
-        'analysis_timestamp': analysis_output.get('generated_at'),
-        'cluster_summary': analysis_output.get('cluster_summary', {}),
-        'deployment_count': len(analysis_output.get('deployment_analysis', [])),
-        'hpa_count': len(analysis_output.get('hpa_analysis', [])),
-        'node_count': len(analysis_output.get('node_analysis', []))
-    }
+    llm_input = _prepare_simplified_input(analysis_output)
+    logger.debug(f"Simplified input size: {len(json.dumps(llm_input)):,} bytes")
     
     # 3. Call LLM
     logger.info(f"Calling LLM ({LLM_MODE} mode)...")
@@ -135,13 +129,17 @@ def run_once_for_cluster(analysis_path: str, insights_path: str) -> Dict[str, An
     
     # 4. Parse LLM response
     logger.info("Parsing LLM response...")
+    logger.debug(f"Raw LLM response: {llm_response[:500]}...")
     try:
         # Try to extract JSON from response
         insights_json = _extract_json_from_response(llm_response)
+        logger.debug(f"Extracted JSON: {insights_json[:500]}...")
         insights_data = json.loads(insights_json)
         logger.info("Parsed JSON insights successfully")
+        logger.debug(f"Parsed keys: {list(insights_data.keys())}")
     except json.JSONDecodeError as e:
         logger.error(f"LLM response is not valid JSON: {e}")
+        logger.error(f"Raw response: {llm_response}")
         return {'error': f'LLM_RESPONSE_INVALID_JSON: {str(e)}'}
     except Exception as e:
         logger.error(f"Failed to parse LLM response: {e}")
@@ -260,6 +258,64 @@ def main() -> int:
     logger.info("=" * 50)
     
     return 0 if failed_count == 0 else 1
+
+
+def _prepare_simplified_input(analysis_output: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare simplified input for LLM to reduce token count
+    
+    Extracts only the key facts needed for insights generation.
+    """
+    # Deployment summaries
+    deployments = []
+    for dep in analysis_output.get('deployment_analysis', []):
+        dep_info = dep.get('deployment', {})
+        flags = dep.get('behavior_flags', [])
+        deployments.append({
+            'name': dep_info.get('name'),
+            'namespace': dep_info.get('namespace'),
+            'replicas': dep_info.get('replicas'),
+            'flags': flags,
+            'insufficient_data': dep.get('insufficient_data', False)
+        })
+    
+    # HPA summaries
+    hpas = []
+    for hpa in analysis_output.get('hpa_analysis', []):
+        scaling = hpa.get('scaling_behavior', {})
+        config = hpa.get('hpa_config_facts', {})
+        hpas.append({
+            'name': hpa.get('hpa_name'),
+            'namespace': hpa.get('hpa_namespace'),
+            'current_replicas': scaling.get('current_replicas'),
+            'min_replicas': config.get('min_replicas'),
+            'max_replicas': config.get('max_replicas'),
+            'at_min': scaling.get('at_min'),
+            'at_max': scaling.get('at_max'),
+            'flags': hpa.get('analysis_flags', [])
+        })
+    
+    # Node summaries
+    nodes = []
+    for node in analysis_output.get('node_analysis', []):
+        node_info = node.get('node', {})
+        frag = node.get('fragmentation_analysis', {})
+        frag_attr = node.get('fragmentation_attribution', {})
+        nodes.append({
+            'name': node_info.get('name'),
+            'cpu_fragmentation': frag.get('cpu_fragmentation'),
+            'memory_fragmentation': frag.get('memory_fragmentation'),
+            'pod_packing_efficiency': frag.get('pod_packing_efficiency'),
+            'large_request_pods_count': len(frag_attr.get('large_request_pods', [])),
+            'constraint_blockers_count': len(frag_attr.get('constraint_blockers', [])),
+            'scale_down_blockers_count': len(frag_attr.get('scale_down_blockers', []))
+        })
+    
+    return {
+        'cluster_summary': analysis_output.get('cluster_summary', {}),
+        'deployments': deployments,
+        'hpas': hpas,
+        'nodes': nodes
+    }
 
 
 def _extract_json_from_response(response: str) -> str:
