@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-04T13:22:43.602933+00:00",
+  "generated_at": "2026-01-04T14:01:51.103304+00:00",
   "cluster_info": {
     "cluster_name": "local-kind",
     "project": "local",
@@ -32,19 +32,31 @@
         "3 memory metric points collected"
       ],
       "resource_facts": {
-        "cpu_avg_cores": 0.0005,
-        "cpu_p95_cores": 0.0009,
-        "cpu_p99_cores": 0.001,
-        "cpu_p100_cores": 0.001,
-        "memory_avg_bytes": 34184874,
-        "memory_p95_bytes": 73035776,
-        "memory_p99_bytes": 73039872,
-        "memory_p100_bytes": 73039872,
+        "cpu_avg_cores": 0.0004,
+        "cpu_p95_cores": 0.0008,
+        "cpu_p99_cores": 0.0008,
+        "cpu_p100_cores": 0.0008,
+        "memory_avg_bytes": 34341376,
+        "memory_p95_bytes": 73322496,
+        "memory_p99_bytes": 73322496,
+        "memory_p100_bytes": 73322496,
         "pod_count": 1
       },
+      "request_limit_facts": {
+        "cpu_request_cores": null,
+        "cpu_limit_cores": null,
+        "memory_request_bytes": null,
+        "memory_limit_bytes": null,
+        "cpu_utilization_percent": null,
+        "memory_utilization_percent": null,
+        "has_cpu_request": false,
+        "has_cpu_limit": false,
+        "has_memory_request": false,
+        "has_memory_limit": false
+      },
       "derived_metrics": {
-        "cpu_per_pod": 0.0005,
-        "memory_per_pod": 34184874,
+        "cpu_per_pod": 0.0004,
+        "memory_per_pod": 34341376,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [],
@@ -54,7 +66,9 @@
         "affinity_rules": null
       },
       "edge_cases": {
-        "single_replica": "No high availability"
+        "single_replica": "No high availability",
+        "no_cpu_request": "CPU request not set - may cause scheduling issues",
+        "no_memory_request": "Memory request not set - may cause scheduling issues"
       }
     },
     {
@@ -71,19 +85,31 @@
         "4 memory metric points collected"
       ],
       "resource_facts": {
-        "cpu_avg_cores": 0.0011,
-        "cpu_p95_cores": 0.0023,
-        "cpu_p99_cores": 0.0025,
-        "cpu_p100_cores": 0.0025,
-        "memory_avg_bytes": 178965888,
-        "memory_p95_bytes": 359575552,
-        "memory_p99_bytes": 386162688,
-        "memory_p100_bytes": 386162688,
+        "cpu_avg_cores": 0.0009,
+        "cpu_p95_cores": 0.0019,
+        "cpu_p99_cores": 0.0019,
+        "cpu_p100_cores": 0.0019,
+        "memory_avg_bytes": 182204928,
+        "memory_p95_bytes": 366579712,
+        "memory_p99_bytes": 381034496,
+        "memory_p100_bytes": 381034496,
         "pod_count": 1
       },
+      "request_limit_facts": {
+        "cpu_request_cores": null,
+        "cpu_limit_cores": null,
+        "memory_request_bytes": null,
+        "memory_limit_bytes": null,
+        "cpu_utilization_percent": null,
+        "memory_utilization_percent": null,
+        "has_cpu_request": false,
+        "has_cpu_limit": false,
+        "has_memory_request": false,
+        "has_memory_limit": false
+      },
       "derived_metrics": {
-        "cpu_per_pod": 0.0011,
-        "memory_per_pod": 178965888,
+        "cpu_per_pod": 0.0009,
+        "memory_per_pod": 182204928,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [],
@@ -93,7 +119,9 @@
         "affinity_rules": null
       },
       "edge_cases": {
-        "single_replica": "No high availability"
+        "single_replica": "No high availability",
+        "no_cpu_request": "CPU request not set - may cause scheduling issues",
+        "no_memory_request": "Memory request not set - may cause scheduling issues"
       }
     },
     {
@@ -110,19 +138,31 @@
         "6 memory metric points collected"
       ],
       "resource_facts": {
-        "cpu_avg_cores": 0.2667,
+        "cpu_avg_cores": 0.2472,
         "cpu_p95_cores": 0.4001,
         "cpu_p99_cores": 0.4001,
         "cpu_p100_cores": 0.4001,
-        "memory_avg_bytes": 116514816,
+        "memory_avg_bytes": 116428288,
         "memory_p95_bytes": 175730688,
         "memory_p99_bytes": 175730688,
         "memory_p100_bytes": 175730688,
         "pod_count": 2
       },
+      "request_limit_facts": {
+        "cpu_request_cores": 0.4,
+        "cpu_limit_cores": 0.8,
+        "memory_request_bytes": 536870912,
+        "memory_limit_bytes": 1073741824,
+        "cpu_utilization_percent": 61.8,
+        "memory_utilization_percent": 21.7,
+        "has_cpu_request": true,
+        "has_cpu_limit": true,
+        "has_memory_request": true,
+        "has_memory_limit": true
+      },
       "derived_metrics": {
-        "cpu_per_pod": 0.1333,
-        "memory_per_pod": 58257408,
+        "cpu_per_pod": 0.1236,
+        "memory_per_pod": 58214144,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [],
@@ -148,18 +188,30 @@
       ],
       "resource_facts": {
         "cpu_avg_cores": 0.0001,
-        "cpu_p95_cores": 0.0003,
-        "cpu_p99_cores": 0.0003,
-        "cpu_p100_cores": 0.0003,
-        "memory_avg_bytes": 19227648,
-        "memory_p95_bytes": 29773824,
-        "memory_p99_bytes": 29904896,
-        "memory_p100_bytes": 29904896,
+        "cpu_p95_cores": 0.0001,
+        "cpu_p99_cores": 0.0001,
+        "cpu_p100_cores": 0.0001,
+        "memory_avg_bytes": 20631296,
+        "memory_p95_bytes": 33075200,
+        "memory_p99_bytes": 33316864,
+        "memory_p100_bytes": 33316864,
         "pod_count": 1
+      },
+      "request_limit_facts": {
+        "cpu_request_cores": null,
+        "cpu_limit_cores": null,
+        "memory_request_bytes": null,
+        "memory_limit_bytes": null,
+        "cpu_utilization_percent": null,
+        "memory_utilization_percent": null,
+        "has_cpu_request": false,
+        "has_cpu_limit": false,
+        "has_memory_request": false,
+        "has_memory_limit": false
       },
       "derived_metrics": {
         "cpu_per_pod": 0.0001,
-        "memory_per_pod": 19227648,
+        "memory_per_pod": 20631296,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [],
@@ -169,7 +221,9 @@
         "affinity_rules": null
       },
       "edge_cases": {
-        "single_replica": "No high availability"
+        "single_replica": "No high availability",
+        "no_cpu_request": "CPU request not set - may cause scheduling issues",
+        "no_memory_request": "Memory request not set - may cause scheduling issues"
       }
     },
     {
@@ -186,19 +240,31 @@
         "6 memory metric points collected"
       ],
       "resource_facts": {
-        "cpu_avg_cores": 0.0008,
-        "cpu_p95_cores": 0.0012,
-        "cpu_p99_cores": 0.0013,
-        "cpu_p100_cores": 0.0013,
-        "memory_avg_bytes": 34179882,
-        "memory_p95_bytes": 56791040,
-        "memory_p99_bytes": 57208832,
-        "memory_p100_bytes": 57208832,
+        "cpu_avg_cores": 0.0007,
+        "cpu_p95_cores": 0.0011,
+        "cpu_p99_cores": 0.0011,
+        "cpu_p100_cores": 0.0011,
+        "memory_avg_bytes": 34237568,
+        "memory_p95_bytes": 56872960,
+        "memory_p99_bytes": 57229312,
+        "memory_p100_bytes": 57229312,
         "pod_count": 2
       },
+      "request_limit_facts": {
+        "cpu_request_cores": 0.2,
+        "cpu_limit_cores": null,
+        "memory_request_bytes": 146800640,
+        "memory_limit_bytes": 356515840,
+        "cpu_utilization_percent": 0.3,
+        "memory_utilization_percent": 23.3,
+        "has_cpu_request": true,
+        "has_cpu_limit": false,
+        "has_memory_request": true,
+        "has_memory_limit": true
+      },
       "derived_metrics": {
-        "cpu_per_pod": 0.0004,
-        "memory_per_pod": 17089941,
+        "cpu_per_pod": 0.0003,
+        "memory_per_pod": 17118784,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [
@@ -210,7 +276,9 @@
         "pod_disruption_budgets": null,
         "affinity_rules": null
       },
-      "edge_cases": {}
+      "edge_cases": {
+        "cpu_over_provisioned": "CPU usage (0.001) is <10% of request (0.200)"
+      }
     },
     {
       "deployment": {
@@ -227,18 +295,30 @@
       ],
       "resource_facts": {
         "cpu_avg_cores": 0.0001,
-        "cpu_p95_cores": 0.0002,
-        "cpu_p99_cores": 0.0002,
-        "cpu_p100_cores": 0.0002,
-        "memory_avg_bytes": 23930282,
-        "memory_p95_bytes": 53006336,
-        "memory_p99_bytes": 53006336,
-        "memory_p100_bytes": 53006336,
+        "cpu_p95_cores": 0.0001,
+        "cpu_p99_cores": 0.0001,
+        "cpu_p100_cores": 0.0001,
+        "memory_avg_bytes": 23974314,
+        "memory_p95_bytes": 53010432,
+        "memory_p99_bytes": 53014528,
+        "memory_p100_bytes": 53014528,
         "pod_count": 1
+      },
+      "request_limit_facts": {
+        "cpu_request_cores": null,
+        "cpu_limit_cores": null,
+        "memory_request_bytes": null,
+        "memory_limit_bytes": null,
+        "cpu_utilization_percent": null,
+        "memory_utilization_percent": null,
+        "has_cpu_request": false,
+        "has_cpu_limit": false,
+        "has_memory_request": false,
+        "has_memory_limit": false
       },
       "derived_metrics": {
         "cpu_per_pod": 0.0001,
-        "memory_per_pod": 23930282,
+        "memory_per_pod": 23974314,
         "replica_efficiency": 1.0
       },
       "behavior_flags": [],
@@ -248,7 +328,9 @@
         "affinity_rules": null
       },
       "edge_cases": {
-        "single_replica": "No high availability"
+        "single_replica": "No high availability",
+        "no_cpu_request": "CPU request not set - may cause scheduling issues",
+        "no_memory_request": "Memory request not set - may cause scheduling issues"
       }
     }
   ],
@@ -435,9 +517,9 @@
         "pods_requested_count": 16.0
       },
       "utilization_facts": {
-        "cpu_usage_cores": 0.9532174956192191,
-        "memory_usage_bytes": 1701273600.0,
-        "memory_available_bytes": 6516617216.0,
+        "cpu_usage_cores": 0.9027932664416134,
+        "memory_usage_bytes": 1736577024.0,
+        "memory_available_bytes": 6481313792.0,
         "pod_count": 16.0
       },
       "fragmentation_analysis": {

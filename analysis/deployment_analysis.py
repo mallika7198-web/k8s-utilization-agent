@@ -10,6 +10,7 @@ def analyze_deployments(deployments):
     
     Returns list of deployment analysis objects with:
     - resource_facts: CPU/memory usage statistics (avg, p95, p99, p100)
+    - request_limit_facts: CPU/memory requests and limits from pod specs
     - behavior_flags: Idle, overprovisioned, bursty, etc.
     - scheduling_facts: Replica counts, request/limit configuration
     - edge_cases: Unusual patterns or constraints
@@ -35,6 +36,26 @@ def analyze_deployments(deployments):
         )
         pod_count_val = int(float(pod_count[0]['value'][1])) if pod_count else 0
         
+        # Query requests and limits from kube-state-metrics
+        cpu_requests = prom.query_instant(
+            f'sum(kube_pod_container_resource_requests{{pod=~".*{name}.*",namespace="{namespace}",resource="cpu"}})'
+        )
+        cpu_limits = prom.query_instant(
+            f'sum(kube_pod_container_resource_limits{{pod=~".*{name}.*",namespace="{namespace}",resource="cpu"}})'
+        )
+        memory_requests = prom.query_instant(
+            f'sum(kube_pod_container_resource_requests{{pod=~".*{name}.*",namespace="{namespace}",resource="memory"}})'
+        )
+        memory_limits = prom.query_instant(
+            f'sum(kube_pod_container_resource_limits{{pod=~".*{name}.*",namespace="{namespace}",resource="memory"}})'
+        )
+        
+        # Extract request/limit values
+        cpu_req_val = _extract_value(cpu_requests)
+        cpu_lim_val = _extract_value(cpu_limits)
+        mem_req_val = _extract_value(memory_requests)
+        mem_lim_val = _extract_value(memory_limits)
+        
         # Extract resource statistics
         cpu_avg = _compute_avg(cpu_data)
         cpu_p95, cpu_p99, cpu_p100 = _compute_percentiles(cpu_data, [0.95, 0.99, 1.0])
@@ -42,11 +63,16 @@ def analyze_deployments(deployments):
         mem_avg = _compute_avg(memory_data)
         mem_p95, mem_p99, mem_p100 = _compute_percentiles(memory_data, [0.95, 0.99, 1.0])
         
+        # Compute utilization percentages (usage vs requests)
+        cpu_util_pct = _compute_utilization_pct(cpu_avg, cpu_req_val)
+        mem_util_pct = _compute_utilization_pct(mem_avg, mem_req_val)
+        
         # Compute utilization flags
         flags = _compute_behavior_flags(
             cpu_avg, cpu_p95, cpu_p99, cpu_p100,
             mem_avg, mem_p95, mem_p99, mem_p100,
-            replicas, pod_count_val
+            replicas, pod_count_val,
+            cpu_req_val, mem_req_val
         )
         
         analysis.append({
@@ -69,6 +95,18 @@ def analyze_deployments(deployments):
                 'memory_p100_bytes': int(mem_p100),
                 'pod_count': pod_count_val
             },
+            'request_limit_facts': {
+                'cpu_request_cores': round(cpu_req_val, 4) if cpu_req_val else None,
+                'cpu_limit_cores': round(cpu_lim_val, 4) if cpu_lim_val else None,
+                'memory_request_bytes': int(mem_req_val) if mem_req_val else None,
+                'memory_limit_bytes': int(mem_lim_val) if mem_lim_val else None,
+                'cpu_utilization_percent': cpu_util_pct,
+                'memory_utilization_percent': mem_util_pct,
+                'has_cpu_request': cpu_req_val is not None and cpu_req_val > 0,
+                'has_cpu_limit': cpu_lim_val is not None and cpu_lim_val > 0,
+                'has_memory_request': mem_req_val is not None and mem_req_val > 0,
+                'has_memory_limit': mem_lim_val is not None and mem_lim_val > 0
+            },
             'derived_metrics': {
                 'cpu_per_pod': round(cpu_avg / max(pod_count_val, 1), 4),
                 'memory_per_pod': int(mem_avg / max(pod_count_val, 1)),
@@ -80,13 +118,31 @@ def analyze_deployments(deployments):
                 'pod_disruption_budgets': None,
                 'affinity_rules': None
             },
-            'edge_cases': _detect_edge_cases(replicas, pod_count_val, cpu_avg, mem_avg)
+            'edge_cases': _detect_edge_cases(replicas, pod_count_val, cpu_avg, mem_avg, cpu_req_val, mem_req_val)
         })
     
     return analysis
 
 
-def _compute_behavior_flags(cpu_avg, cpu_p95, cpu_p99, cpu_p100, mem_avg, mem_p95, mem_p99, mem_p100, replicas, pod_count):
+def _extract_value(metric_result):
+    """Extract numeric value from Prometheus metric result"""
+    if not metric_result or len(metric_result) == 0:
+        return None
+    try:
+        value = metric_result[0].get('value', [None, None])[1]
+        return float(value) if value else None
+    except (ValueError, IndexError, TypeError, KeyError):
+        return None
+
+
+def _compute_utilization_pct(usage, request):
+    """Compute utilization percentage (usage / request * 100)"""
+    if request is None or request <= 0:
+        return None
+    return round((usage / request) * 100, 1)
+
+
+def _compute_behavior_flags(cpu_avg, cpu_p95, cpu_p99, cpu_p100, mem_avg, mem_p95, mem_p99, mem_p100, replicas, pod_count, cpu_req=None, mem_req=None):
     """Determine behavioral flags based on resource usage patterns"""
     flags = []
     
@@ -115,7 +171,7 @@ def _compute_behavior_flags(cpu_avg, cpu_p95, cpu_p99, cpu_p100, mem_avg, mem_p9
     return flags
 
 
-def _detect_edge_cases(replicas, pod_count, cpu_avg, mem_avg):
+def _detect_edge_cases(replicas, pod_count, cpu_avg, mem_avg, cpu_req=None, mem_req=None):
     """Detect unusual or edge case configurations"""
     cases = {}
     
@@ -133,6 +189,20 @@ def _detect_edge_cases(replicas, pod_count, cpu_avg, mem_avg):
     
     if mem_avg > 1_000_000_000:  # > 1GB
         cases['high_memory_usage'] = f'{mem_avg / 1_000_000_000:.1f}GB average'
+    
+    # Request/Limit edge cases
+    if cpu_req is None or cpu_req == 0:
+        cases['no_cpu_request'] = 'CPU request not set - may cause scheduling issues'
+    
+    if mem_req is None or mem_req == 0:
+        cases['no_memory_request'] = 'Memory request not set - may cause scheduling issues'
+    
+    # Over-provisioned (usage << request)
+    if cpu_req and cpu_req > 0 and cpu_avg < cpu_req * 0.1:
+        cases['cpu_over_provisioned'] = f'CPU usage ({cpu_avg:.3f}) is <10% of request ({cpu_req:.3f})'
+    
+    if mem_req and mem_req > 0 and mem_avg < mem_req * 0.1:
+        cases['memory_over_provisioned'] = f'Memory usage is <10% of request'
     
     return cases
 

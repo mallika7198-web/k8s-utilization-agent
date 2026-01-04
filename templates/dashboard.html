@@ -488,10 +488,10 @@
                             <th>Name</th>
                             <th>Namespace</th>
                             <th>Replicas</th>
-                            <th>CPU Util%</th>
-                            <th>Mem Util%</th>
+                            <th>CPU (Usage/Request)</th>
+                            <th>Memory (Usage/Request)</th>
                             <th>Behavior Flags</th>
-                            <th>Safe to Resize</th>
+                            <th>Status</th>
                             <th>Details</th>
                         </tr>
                     </thead>
@@ -503,15 +503,35 @@
                             <td>{{ d.resource_facts.pod_count or 0 }}/{{ d.deployment.replicas or d.deployment.desired_replicas or 1 }}</td>
                             <td>
                                 {% set cpu_avg = d.resource_facts.cpu_avg_cores or 0 %}
-                                <span class="badge badge-green">
+                                {% set cpu_req = d.request_limit_facts.cpu_request_cores if d.request_limit_facts else None %}
+                                {% set cpu_util = d.request_limit_facts.cpu_utilization_percent if d.request_limit_facts else None %}
+                                <span class="badge {% if cpu_util and cpu_util > 90 %}badge-red{% elif cpu_util and cpu_util > 70 %}badge-yellow{% else %}badge-green{% endif %}">
                                     {{ (cpu_avg * 1000) | round(1) }}m
                                 </span>
+                                {% if cpu_req %}
+                                <span style="color: var(--text-secondary); font-size: 0.8rem;">/ {{ (cpu_req * 1000) | round(0) }}m</span>
+                                {% if cpu_util %}
+                                <span class="badge {% if cpu_util > 90 %}badge-red{% elif cpu_util > 70 %}badge-yellow{% else %}badge-blue{% endif %}" style="font-size: 0.7rem; margin-left: 4px;">{{ cpu_util }}%</span>
+                                {% endif %}
+                                {% else %}
+                                <span style="color: var(--accent-yellow); font-size: 0.75rem;"> (no req)</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% set mem_avg = d.resource_facts.memory_avg_bytes or 0 %}
-                                <span class="badge badge-green">
+                                {% set mem_req = d.request_limit_facts.memory_request_bytes if d.request_limit_facts else None %}
+                                {% set mem_util = d.request_limit_facts.memory_utilization_percent if d.request_limit_facts else None %}
+                                <span class="badge {% if mem_util and mem_util > 90 %}badge-red{% elif mem_util and mem_util > 70 %}badge-yellow{% else %}badge-green{% endif %}">
                                     {{ (mem_avg / 1048576) | round(1) }} MiB
                                 </span>
+                                {% if mem_req %}
+                                <span style="color: var(--text-secondary); font-size: 0.8rem;">/ {{ (mem_req / 1048576) | round(0) }} MiB</span>
+                                {% if mem_util %}
+                                <span class="badge {% if mem_util > 90 %}badge-red{% elif mem_util > 70 %}badge-yellow{% else %}badge-blue{% endif %}" style="font-size: 0.7rem; margin-left: 4px;">{{ mem_util }}%</span>
+                                {% endif %}
+                                {% else %}
+                                <span style="color: var(--accent-yellow); font-size: 0.75rem;"> (no req)</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <div class="flags">
@@ -538,24 +558,62 @@
                             <td colspan="8" style="padding: 0;">
                                 <div id="deploy-{{ loop.index }}" class="drill-down">
                                     <div class="card" style="margin: 10px; background: var(--bg-secondary);">
-                                        <h3>Resource Usage Details: {{ d.deployment.name }}</h3>
+                                        <h3>Resource Details: {{ d.deployment.name }}</h3>
                                         <div class="grid-2">
                                             <div>
-                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">CPU</h4>
+                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">CPU Usage</h4>
                                                 <table>
                                                     <tr><td>Average</td><td>{{ ((d.resource_facts.cpu_avg_cores or 0) * 1000) | round(1) }}m</td></tr>
                                                     <tr><td>P95</td><td>{{ ((d.resource_facts.cpu_p95_cores or 0) * 1000) | round(1) }}m</td></tr>
                                                     <tr><td>P99</td><td>{{ ((d.resource_facts.cpu_p99_cores or 0) * 1000) | round(1) }}m</td></tr>
-                                                    <tr><td>Max</td><td>{{ ((d.resource_facts.cpu_p100_cores or 0) * 1000) | round(1) }}m</td></tr>
+                                                    <tr><td>Max (P100)</td><td>{{ ((d.resource_facts.cpu_p100_cores or 0) * 1000) | round(1) }}m</td></tr>
+                                                </table>
+                                                <h4 style="color: var(--accent-green); margin: 15px 0 10px;">CPU Request/Limit</h4>
+                                                <table>
+                                                    {% if d.request_limit_facts %}
+                                                    <tr>
+                                                        <td>Request</td>
+                                                        <td>{% if d.request_limit_facts.cpu_request_cores %}{{ (d.request_limit_facts.cpu_request_cores * 1000) | round(0) }}m{% else %}<span style="color: var(--accent-yellow);">Not Set</span>{% endif %}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Limit</td>
+                                                        <td>{% if d.request_limit_facts.cpu_limit_cores %}{{ (d.request_limit_facts.cpu_limit_cores * 1000) | round(0) }}m{% else %}<span style="color: var(--accent-yellow);">Not Set</span>{% endif %}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Utilization</td>
+                                                        <td>{% if d.request_limit_facts.cpu_utilization_percent %}<span class="badge {% if d.request_limit_facts.cpu_utilization_percent > 90 %}badge-red{% elif d.request_limit_facts.cpu_utilization_percent > 70 %}badge-yellow{% else %}badge-green{% endif %}">{{ d.request_limit_facts.cpu_utilization_percent }}%</span>{% else %}N/A{% endif %}</td>
+                                                    </tr>
+                                                    {% else %}
+                                                    <tr><td colspan="2" style="color: var(--text-secondary);">Request/Limit data not available</td></tr>
+                                                    {% endif %}
                                                 </table>
                                             </div>
                                             <div>
-                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">Memory</h4>
+                                                <h4 style="color: var(--accent-blue); margin-bottom: 10px;">Memory Usage</h4>
                                                 <table>
                                                     <tr><td>Average</td><td>{{ ((d.resource_facts.memory_avg_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
                                                     <tr><td>P95</td><td>{{ ((d.resource_facts.memory_p95_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
                                                     <tr><td>P99</td><td>{{ ((d.resource_facts.memory_p99_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
-                                                    <tr><td>Max</td><td>{{ ((d.resource_facts.memory_p100_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
+                                                    <tr><td>Max (P100)</td><td>{{ ((d.resource_facts.memory_p100_bytes or 0) / 1048576) | round(1) }} MiB</td></tr>
+                                                </table>
+                                                <h4 style="color: var(--accent-green); margin: 15px 0 10px;">Memory Request/Limit</h4>
+                                                <table>
+                                                    {% if d.request_limit_facts %}
+                                                    <tr>
+                                                        <td>Request</td>
+                                                        <td>{% if d.request_limit_facts.memory_request_bytes %}{{ (d.request_limit_facts.memory_request_bytes / 1048576) | round(0) }} MiB{% else %}<span style="color: var(--accent-yellow);">Not Set</span>{% endif %}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Limit</td>
+                                                        <td>{% if d.request_limit_facts.memory_limit_bytes %}{{ (d.request_limit_facts.memory_limit_bytes / 1048576) | round(0) }} MiB{% else %}<span style="color: var(--accent-yellow);">Not Set</span>{% endif %}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Utilization</td>
+                                                        <td>{% if d.request_limit_facts.memory_utilization_percent %}<span class="badge {% if d.request_limit_facts.memory_utilization_percent > 90 %}badge-red{% elif d.request_limit_facts.memory_utilization_percent > 70 %}badge-yellow{% else %}badge-green{% endif %}">{{ d.request_limit_facts.memory_utilization_percent }}%</span>{% else %}N/A{% endif %}</td>
+                                                    </tr>
+                                                    {% else %}
+                                                    <tr><td colspan="2" style="color: var(--text-secondary);">Request/Limit data not available</td></tr>
+                                                    {% endif %}
                                                 </table>
                                             </div>
                                         </div>

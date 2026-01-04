@@ -24,15 +24,28 @@ def sample_analysis_output():
                     "namespace": "default",
                     "replicas": {"desired": 3, "ready": 3, "updated": 3}
                 },
-                "resource_usage": {
-                    "cpu": {"avg_cores": 0.45, "p95_cores": 1.2, "p99_cores": 2.1, "max_cores": 2.5},
-                    "memory": {"avg_bytes": 512000000, "p95_bytes": 800000000, "p99_bytes": 950000000, "max_bytes": 1000000000}
+                "resource_facts": {
+                    "cpu_avg_cores": 0.45,
+                    "cpu_p95_cores": 1.2,
+                    "cpu_p99_cores": 2.1,
+                    "cpu_p100_cores": 2.5,
+                    "memory_avg_bytes": 512000000,
+                    "memory_p95_bytes": 800000000,
+                    "memory_p99_bytes": 950000000,
+                    "memory_p100_bytes": 1000000000,
+                    "pod_count": 3
                 },
-                "request_allocation": {
-                    "cpu_requests": "500m",
-                    "memory_requests": "512Mi",
-                    "cpu_utilization_percent": 90,
-                    "memory_utilization_percent": 102
+                "request_limit_facts": {
+                    "cpu_request_cores": 0.5,
+                    "cpu_limit_cores": 1.0,
+                    "memory_request_bytes": 536870912,
+                    "memory_limit_bytes": 1073741824,
+                    "cpu_utilization_percent": 90.0,
+                    "memory_utilization_percent": 95.4,
+                    "has_cpu_request": True,
+                    "has_cpu_limit": True,
+                    "has_memory_request": True,
+                    "has_memory_limit": True
                 },
                 "behavior_flags": ["BURSTY", "CPU_BURSTY"],
                 "pending_pods_count": 0,
@@ -44,15 +57,28 @@ def sample_analysis_output():
                     "namespace": "batch",
                     "replicas": {"desired": 2, "ready": 2, "updated": 2}
                 },
-                "resource_usage": {
-                    "cpu": {"avg_cores": 1.5, "p95_cores": 1.8, "p99_cores": 2.0, "max_cores": 2.2},
-                    "memory": {"avg_bytes": 2000000000, "p95_bytes": 2200000000, "p99_bytes": 2300000000, "max_bytes": 2400000000}
+                "resource_facts": {
+                    "cpu_avg_cores": 1.5,
+                    "cpu_p95_cores": 1.8,
+                    "cpu_p99_cores": 2.0,
+                    "cpu_p100_cores": 2.2,
+                    "memory_avg_bytes": 2000000000,
+                    "memory_p95_bytes": 2200000000,
+                    "memory_p99_bytes": 2300000000,
+                    "memory_p100_bytes": 2400000000,
+                    "pod_count": 2
                 },
-                "request_allocation": {
-                    "cpu_requests": "2000m",
-                    "memory_requests": "2Gi",
-                    "cpu_utilization_percent": 75,
-                    "memory_utilization_percent": 100
+                "request_limit_facts": {
+                    "cpu_request_cores": 2.0,
+                    "cpu_limit_cores": 2.5,
+                    "memory_request_bytes": 2147483648,
+                    "memory_limit_bytes": 3221225472,
+                    "cpu_utilization_percent": 75.0,
+                    "memory_utilization_percent": 93.1,
+                    "has_cpu_request": True,
+                    "has_cpu_limit": True,
+                    "has_memory_request": True,
+                    "has_memory_limit": True
                 },
                 "behavior_flags": ["HEALTHY"],
                 "pending_pods_count": 0,
@@ -64,15 +90,28 @@ def sample_analysis_output():
                     "namespace": "default",
                     "replicas": {"desired": 5, "ready": 5, "updated": 5}
                 },
-                "resource_usage": {
-                    "cpu": {"avg_cores": 0.08, "p95_cores": 0.15, "p99_cores": 0.2, "max_cores": 0.25},
-                    "memory": {"avg_bytes": 128000000, "p95_bytes": 150000000, "p99_bytes": 160000000, "max_bytes": 170000000}
+                "resource_facts": {
+                    "cpu_avg_cores": 0.08,
+                    "cpu_p95_cores": 0.15,
+                    "cpu_p99_cores": 0.2,
+                    "cpu_p100_cores": 0.25,
+                    "memory_avg_bytes": 128000000,
+                    "memory_p95_bytes": 150000000,
+                    "memory_p99_bytes": 160000000,
+                    "memory_p100_bytes": 170000000,
+                    "pod_count": 5
                 },
-                "request_allocation": {
-                    "cpu_requests": "250m",
-                    "memory_requests": "256Mi",
-                    "cpu_utilization_percent": 32,
-                    "memory_utilization_percent": 50
+                "request_limit_facts": {
+                    "cpu_request_cores": 0.25,
+                    "cpu_limit_cores": 0.5,
+                    "memory_request_bytes": 268435456,
+                    "memory_limit_bytes": 536870912,
+                    "cpu_utilization_percent": 32.0,
+                    "memory_utilization_percent": 47.7,
+                    "has_cpu_request": True,
+                    "has_cpu_limit": True,
+                    "has_memory_request": True,
+                    "has_memory_limit": True
                 },
                 "behavior_flags": ["UNDERUTILIZED"],
                 "pending_pods_count": 0,
