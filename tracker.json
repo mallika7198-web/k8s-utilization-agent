@@ -122,5 +122,14 @@
     ],
     "change_type": "feature",
     "description": "Multi-cluster loop with cluster-specific output files: Output files now named {cluster_name}_analysis_output.json and {cluster_name}_insights_output.json. Added RUN_MODE config ('active' or 'all'), get_analysis_output_path(), get_insights_output_path(), get_clusters_to_run() helpers. Orchestrator and Phase 2 runner loop through clusters one by one. Each output includes cluster_info metadata. All 102 tests passing."
+  },
+  {
+    "timestamp": "2026-01-04T14:00:00Z",
+    "files_modified": [
+      "ui.py",
+      "templates/dashboard.html"
+    ],
+    "change_type": "ui_update",
+    "description": "Multi-cluster UI support: Added cluster selector dropdown in header, displays cluster info (name, environment, project, owner). Loads cluster-specific output files. Added /api/clusters endpoint. Updated /api/analysis and /api/insights to accept ?cluster= parameter. Updated /ready to show available clusters. Backward compatible with legacy single-file paths. All 102 tests passing."
   }
 ]
