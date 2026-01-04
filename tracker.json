@@ -51,5 +51,38 @@
     ],
     "change_type": "phase3_completion",
     "description": "Phase 3 presentation layer finalized: Created templates directory with dashboard.html (3-tab interface for Facts, Insights, Raw JSON) and error.html. Fixed ui.py to use correct output/ paths and proper API response handling. Template structure matches actual analysis_output.json schema (deployment_analysis, hpa_analysis with scaling_config/scaling_behavior, node_analysis with fragmentation_analysis/utilization_facts, cross_layer_observations). All endpoints tested and working."
+  },
+  {
+    "timestamp": "2026-01-03T02:00:00Z",
+    "files_modified": [
+      "config.py",
+      "metrics/prometheus_client.py",
+      "orchestrator.py",
+      "phase2/llm_client.py",
+      "phase2/runner.py",
+      "tracker.py",
+      "ui.py",
+      "tests/conftest.py",
+      "tests/test_config.py",
+      "tests/test_llm_client.py",
+      "tests/test_prometheus_client.py",
+      "tests/test_ui.py",
+      "tests/test_validator.py",
+      "TODO.txt"
+    ],
+    "change_type": "refactor_and_testing",
+    "description": "Major improvements from TODO list: Bug fixes - defined PrometheusError class hierarchy, fixed tracker.py function signature. Short-term - replaced print() with structured logging, added retry logic to Prometheus client (3 retries with exponential backoff), added /health and /ready endpoints for K8s probes, added LLM API key support, added config validation on startup. Medium-term - added LRU caching for Prometheus queries, added /metrics endpoint for self-monitoring, created comprehensive test suite with 67 passing tests covering config, prometheus_client, llm_client, validator, and ui modules. Fixed datetime.utcnow() deprecation warnings."
+  },
+  {
+    "timestamp": "2026-01-03T03:00:00Z",
+    "files_modified": [
+      "config.py",
+      "metrics/prometheus_client.py",
+      "analysis/fragmentation_attribution.py",
+      "analysis/node_analysis.py",
+      "tests/test_fragmentation_attribution.py"
+    ],
+    "change_type": "phase1_extension",
+    "description": "Node Fragmentation Attribution feature: Added configurable PROMETHEUS_RETRY_COUNT and PROMETHEUS_RETRY_BACKOFF_BASE to config. Added fragmentation thresholds (DAEMONSET_OVERHEAD_THRESHOLD_PERCENT=15, LARGE_POD_REQUEST_THRESHOLD_PERCENT=25, FRAGMENTATION_THRESHOLD=0.3). Created analysis/fragmentation_attribution.py module with 4 attribution functions: large_request_pods (pods consuming >25% of node resources), constraint_blockers (pods with topology/affinity constraints), daemonset_overhead (DaemonSet resource consumption), scale_down_blockers (pods preventing node drain). Integrated into node_analysis.py with second-pass attribution for nodes exceeding fragmentation threshold. Added 13 comprehensive tests (80 total now passing)."
   }
 ]

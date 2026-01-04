@@ -2,10 +2,15 @@
 Node analysis - Phase 1 (Facts only, deterministic)
 Analyzes node capacity, allocatable resources, and pod scheduling
 """
+import logging
+from typing import List, Dict, Any
 from metrics import prometheus_client as prom
+from config import FRAGMENTATION_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 
-def analyze_nodes(nodes):
+def analyze_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Analyze nodes for resource allocation and scheduling
     
     Returns list of node analysis objects with:
@@ -13,6 +18,7 @@ def analyze_nodes(nodes):
     - allocatable_facts: Available resources for pod scheduling
     - utilization_facts: Current usage across node
     - fragmentation_analysis: Pod distribution and packing efficiency
+    - fragmentation_attribution: (if fragmented) What is causing fragmentation
     """
     analysis = []
     
@@ -32,7 +38,7 @@ def analyze_nodes(nodes):
         
         pod_count_val = _extract_value(pod_count)
         
-        analysis.append({
+        node_analysis = {
             'node': {
                 'name': name,
                 'labels': node.get('labels', {})
@@ -72,9 +78,42 @@ def analyze_nodes(nodes):
                 'disk_pressure': False,
                 'pid_pressure': False
             }
-        })
+        }
+        
+        analysis.append(node_analysis)
+    
+    # Second pass: Add fragmentation attribution for fragmented nodes
+    _add_fragmentation_attribution(analysis)
     
     return analysis
+
+
+def _add_fragmentation_attribution(all_nodes_analysis: List[Dict[str, Any]]) -> None:
+    """
+    Add fragmentation_attribution to nodes that are fragmented.
+    
+    This is a second pass that runs after all nodes have basic analysis,
+    because attribution needs cross-node comparison.
+    """
+    from analysis.fragmentation_attribution import analyze_fragmentation_attribution
+    
+    for node_analysis in all_nodes_analysis:
+        node_name = node_analysis.get('node', {}).get('name', 'unknown')
+        fragmentation = node_analysis.get('fragmentation_analysis', {})
+        
+        cpu_frag = fragmentation.get('cpu_fragmentation', 0) or 0
+        mem_frag = fragmentation.get('memory_fragmentation', 0) or 0
+        
+        # Only add attribution if node is fragmented
+        if cpu_frag >= FRAGMENTATION_THRESHOLD or mem_frag >= FRAGMENTATION_THRESHOLD:
+            logger.info(f"Node {node_name} is fragmented, computing attribution")
+            attribution = analyze_fragmentation_attribution(
+                node_name,
+                node_analysis,
+                all_nodes_analysis
+            )
+            if attribution:
+                node_analysis['fragmentation_attribution'] = attribution
 
 
 def _analyze_scheduling(node_name, pod_count):

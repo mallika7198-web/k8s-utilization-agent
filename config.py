@@ -37,6 +37,8 @@ def _env_bool(name: str, default: bool) -> bool:
 
 PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
 PROMETHEUS_TIMEOUT_SECONDS: int = int(os.getenv("PROMETHEUS_TIMEOUT_SECONDS", "30"))
+PROMETHEUS_RETRY_COUNT: int = int(os.getenv("PROMETHEUS_RETRY_COUNT", "3"))
+PROMETHEUS_RETRY_BACKOFF_BASE: int = int(os.getenv("PROMETHEUS_RETRY_BACKOFF_BASE", "1"))
 METRICS_WINDOW_MINUTES: int = int(os.getenv("METRICS_WINDOW_MINUTES", "15"))
 MIN_OBSERVATION_WINDOW_MINUTES: int = int(os.getenv("MIN_OBSERVATION_WINDOW_MINUTES", "10"))
 CPU_BURST_RATIO_THRESHOLD: float = float(os.getenv("CPU_BURST_RATIO_THRESHOLD", "2.0"))
@@ -48,6 +50,16 @@ LOAD_GENERATION_DURATION_SECONDS: int = int(os.getenv("LOAD_GENERATION_DURATION_
 LOAD_GENERATION_CONCURRENCY: int = int(os.getenv("LOAD_GENERATION_CONCURRENCY", "5"))
 EXCLUDED_NAMESPACES: str = os.getenv("EXCLUDED_NAMESPACES", "kube-system,kube-public,istio-system")
 ANALYSIS_OUTPUT_PATH: str = os.getenv("ANALYSIS_OUTPUT_PATH", "output/analysis_output.json")
+
+# =============================================================================
+# Node Fragmentation Attribution Configuration
+# =============================================================================
+# Threshold for DaemonSet overhead (percentage of allocatable resources)
+DAEMONSET_OVERHEAD_THRESHOLD_PERCENT: float = float(os.getenv("DAEMONSET_OVERHEAD_THRESHOLD_PERCENT", "15.0"))
+# Threshold for considering a pod as "large request" (percentage of node allocatable)
+LARGE_POD_REQUEST_THRESHOLD_PERCENT: float = float(os.getenv("LARGE_POD_REQUEST_THRESHOLD_PERCENT", "25.0"))
+# Fragmentation threshold to trigger attribution analysis
+FRAGMENTATION_THRESHOLD: float = float(os.getenv("FRAGMENTATION_THRESHOLD", "0.3"))
 
 # Phase 2: LLM Insights Configuration
 PHASE2_ENABLED: bool = _env_bool("PHASE2_ENABLED", False)
@@ -145,6 +157,8 @@ CRITICAL RULES:
 __all__ = [
     "PROMETHEUS_URL",
     "PROMETHEUS_TIMEOUT_SECONDS",
+    "PROMETHEUS_RETRY_COUNT",
+    "PROMETHEUS_RETRY_BACKOFF_BASE",
     "METRICS_WINDOW_MINUTES",
     "MIN_OBSERVATION_WINDOW_MINUTES",
     "CPU_BURST_RATIO_THRESHOLD",
@@ -156,6 +170,9 @@ __all__ = [
     "LOAD_GENERATION_CONCURRENCY",
     "EXCLUDED_NAMESPACES",
     "ANALYSIS_OUTPUT_PATH",
+    "DAEMONSET_OVERHEAD_THRESHOLD_PERCENT",
+    "LARGE_POD_REQUEST_THRESHOLD_PERCENT",
+    "FRAGMENTATION_THRESHOLD",
     "PHASE2_ENABLED",
     "INSIGHTS_OUTPUT_PATH",
     "LLM_MODE",

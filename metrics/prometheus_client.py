@@ -7,7 +7,13 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
 import requests
-from config import PROMETHEUS_URL, PROMETHEUS_TIMEOUT_SECONDS, METRICS_WINDOW_MINUTES
+from config import (
+    PROMETHEUS_URL, 
+    PROMETHEUS_TIMEOUT_SECONDS, 
+    METRICS_WINDOW_MINUTES,
+    PROMETHEUS_RETRY_COUNT,
+    PROMETHEUS_RETRY_BACKOFF_BASE
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -28,30 +34,28 @@ class PrometheusQueryError(PrometheusError):
     pass
 
 
-# Retry configuration
-MAX_RETRIES = 3
-RETRY_BACKOFF_BASE = 1  # seconds
-
-
 def _retry_with_backoff(func):
-    """Decorator to add retry logic with exponential backoff"""
+    """Decorator to add retry logic with exponential backoff
+    
+    Uses configurable PROMETHEUS_RETRY_COUNT and PROMETHEUS_RETRY_BACKOFF_BASE
+    """
     def wrapper(*args, **kwargs):
         last_exception = None
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(PROMETHEUS_RETRY_COUNT):
             try:
                 return func(*args, **kwargs)
             except (requests.exceptions.ConnectionError, 
                     requests.exceptions.Timeout) as e:
                 last_exception = e
-                wait_time = RETRY_BACKOFF_BASE * (2 ** attempt)
+                wait_time = PROMETHEUS_RETRY_BACKOFF_BASE * (2 ** attempt)
                 logger.warning(
-                    f"Prometheus request failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}. "
+                    f"Prometheus request failed (attempt {attempt + 1}/{PROMETHEUS_RETRY_COUNT}): {e}. "
                     f"Retrying in {wait_time}s..."
                 )
                 time.sleep(wait_time)
         # All retries exhausted
         raise PrometheusConnectionError(
-            f"Failed after {MAX_RETRIES} retries: {last_exception}"
+            f"Failed after {PROMETHEUS_RETRY_COUNT} retries: {last_exception}"
         )
     return wrapper
 
