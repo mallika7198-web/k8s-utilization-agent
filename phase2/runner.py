@@ -4,6 +4,7 @@ Reads analysis_output.json, sends to LLM, writes insights_output.json atomically
 No modifications to Phase 1 output or Prometheus queries.
 """
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -21,11 +22,15 @@ from config import (
     LLM_MODE,
     LLM_ENDPOINT_URL,
     LLM_MODEL_NAME,
-    LLM_TIMEOUT_SECONDS
+    LLM_TIMEOUT_SECONDS,
+    LLM_API_KEY,
+    setup_logging
 )
 from phase2.llm_client import LLMClient
 from phase2.validator import validate_insights_output
 from tracker import append_change
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -60,21 +65,21 @@ def run_once() -> Dict[str, Any]:
     """
     
     # 1. Load Phase 1 analysis (read-only)
-    print(f"📖 Loading Phase 1 analysis from {ANALYSIS_OUTPUT_PATH}...")
+    logger.info(f"Loading Phase 1 analysis from {ANALYSIS_OUTPUT_PATH}...")
     try:
         with open(ANALYSIS_OUTPUT_PATH, 'r') as f:
             analysis_output = json.load(f)
     except FileNotFoundError:
-        print(f"❌ Phase 1 output not found at {ANALYSIS_OUTPUT_PATH}")
+        logger.error(f"Phase 1 output not found at {ANALYSIS_OUTPUT_PATH}")
         return {'error': 'ANALYSIS_OUTPUT_NOT_FOUND'}
     except json.JSONDecodeError:
-        print(f"❌ Phase 1 output is not valid JSON")
+        logger.error(f"Phase 1 output is not valid JSON")
         return {'error': 'ANALYSIS_OUTPUT_INVALID_JSON'}
     
-    print(f"   ✓ Loaded {len(json.dumps(analysis_output)):,} bytes")
+    logger.info(f"Loaded {len(json.dumps(analysis_output)):,} bytes")
     
     # 2. Prepare LLM input
-    print(f"\n🧠 Preparing LLM input...")
+    logger.info("Preparing LLM input...")
     llm_input = {
         'analysis_data': analysis_output,
         'analysis_timestamp': analysis_output.get('generated_at'),
@@ -85,16 +90,17 @@ def run_once() -> Dict[str, Any]:
     }
     
     # 3. Call LLM
-    print(f"\n🔗 Calling LLM ({LLM_MODE} mode)...")
-    print(f"   Endpoint: {LLM_ENDPOINT_URL}")
-    print(f"   Model: {LLM_MODEL_NAME}")
-    print(f"   Timeout: {LLM_TIMEOUT_SECONDS}s")
+    logger.info(f"Calling LLM ({LLM_MODE} mode)...")
+    logger.info(f"Endpoint: {LLM_ENDPOINT_URL}")
+    logger.info(f"Model: {LLM_MODEL_NAME}")
+    logger.debug(f"Timeout: {LLM_TIMEOUT_SECONDS}s")
     
     client = LLMClient(
         mode=LLM_MODE,
         endpoint=LLM_ENDPOINT_URL,
         model=LLM_MODEL_NAME,
-        timeout=LLM_TIMEOUT_SECONDS
+        timeout=LLM_TIMEOUT_SECONDS,
+        api_key=LLM_API_KEY
     )
     
     try:
@@ -102,36 +108,36 @@ def run_once() -> Dict[str, Any]:
             prompt=PHASE2_LLM_PROMPT,
             context=json.dumps(llm_input, indent=2)
         )
-        print(f"   ✓ LLM response received ({len(llm_response):,} characters)")
+        logger.info(f"LLM response received ({len(llm_response):,} characters)")
     except Exception as e:
-        print(f"   ❌ LLM call failed: {e}")
+        logger.error(f"LLM call failed: {e}")
         return {'error': f'LLM_CALL_FAILED: {str(e)}'}
     
     # 4. Parse LLM response
-    print(f"\n📝 Parsing LLM response...")
+    logger.info("Parsing LLM response...")
     try:
         # Try to extract JSON from response
         insights_json = _extract_json_from_response(llm_response)
         insights_data = json.loads(insights_json)
-        print(f"   ✓ Parsed JSON insights")
+        logger.info("Parsed JSON insights successfully")
     except json.JSONDecodeError as e:
-        print(f"   ❌ LLM response is not valid JSON: {e}")
+        logger.error(f"LLM response is not valid JSON: {e}")
         return {'error': f'LLM_RESPONSE_INVALID_JSON: {str(e)}'}
     except Exception as e:
-        print(f"   ❌ Failed to parse LLM response: {e}")
+        logger.error(f"Failed to parse LLM response: {e}")
         return {'error': f'LLM_RESPONSE_PARSE_FAILED: {str(e)}'}
     
     # 5. Validate insights
-    print(f"\n✓ Validating insights structure...")
+    logger.info("Validating insights structure...")
     is_valid, errors = validate_insights_output(insights_data, analysis_output)
     
     if not is_valid:
-        print(f"   ❌ Validation failed:")
+        logger.error("Validation failed:")
         for error in errors:
-            print(f"      - {error}")
+            logger.error(f"  - {error}")
         return {'error': 'VALIDATION_FAILED', 'validation_errors': errors}
     
-    print(f"   ✓ Insights valid")
+    logger.info("Insights validated successfully")
     
     # 6. Wrap insights with metadata
     output = {
@@ -153,9 +159,10 @@ def main() -> int:
         print("⏭️  Phase 2 is disabled (PHASE2_ENABLED=false)")
         return 0
     
-    print("=" * 70)
-    print("PHASE 2: LLM-BASED INSIGHTS GENERATION")
-    print("=" * 70)
+    setup_logging()
+    logger.info("=" * 50)
+    logger.info("PHASE 2: LLM-BASED INSIGHTS GENERATION")
+    logger.info("=" * 50)
     
     # Run Phase 2 analysis
     result = run_once()
@@ -163,40 +170,40 @@ def main() -> int:
     # Check for errors
     if 'error' in result:
         error = result.get('error')
-        print(f"\n❌ Phase 2 failed: {error}")
+        logger.error(f"Phase 2 failed: {error}")
         if 'validation_errors' in result:
             for err in result['validation_errors']:
-                print(f"   - {err}")
+                logger.error(f"  - {err}")
         
         # Don't overwrite existing valid insights on error
         if os.path.exists(INSIGHTS_OUTPUT_PATH):
-            print(f"   Keeping existing valid insights at {INSIGHTS_OUTPUT_PATH}")
+            logger.warning(f"Keeping existing valid insights at {INSIGHTS_OUTPUT_PATH}")
         
         return 1
     
     # Write insights atomically
-    print(f"\n💾 Writing insights to {INSIGHTS_OUTPUT_PATH}...")
+    logger.info(f"Writing insights to {INSIGHTS_OUTPUT_PATH}...")
     try:
         _atomic_write(INSIGHTS_OUTPUT_PATH, json.dumps(result, indent=2))
-        print(f"   ✓ Wrote {len(json.dumps(result)):,} bytes")
+        logger.info(f"Wrote {len(json.dumps(result)):,} bytes")
     except Exception as e:
-        print(f"   ❌ Failed to write insights: {e}")
+        logger.error(f"Failed to write insights: {e}")
         return 2
     
     # Update tracker
     try:
         append_change({
-            'files_modified': [INSIGHTS_OUTPUT_PATH, 'phase2/runner.py'],
+            'files_modified': [INSIGHTS_OUTPUT_PATH],
             'type': 'phase2_insights',
             'description': f'Phase 2 LLM insights generated ({LLM_MODE} mode, {LLM_MODEL_NAME})'
         })
-    except Exception:
-        pass  # Best-effort tracker update
+    except Exception as e:
+        logger.warning(f"Failed to update tracker: {e}")
     
-    print(f"\n✅ Phase 2 complete")
-    print(f"   - Generated at: {result.get('generated_at')}")
-    print(f"   - LLM model: {result.get('llm_model')}")
-    print(f"   - Output: {INSIGHTS_OUTPUT_PATH}")
+    logger.info("Phase 2 complete")
+    logger.info(f"Generated at: {result.get('generated_at')}")
+    logger.info(f"LLM model: {result.get('llm_model')}")
+    logger.info(f"Output: {INSIGHTS_OUTPUT_PATH}")
     
     return 0
 

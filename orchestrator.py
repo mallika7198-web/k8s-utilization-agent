@@ -1,19 +1,24 @@
 """Orchestrator: run discovery -> analysis -> aggregate -> atomic write.
 Copilot: Phase-1 Analysis only. No LLM. No suggestions. Deterministic facts and flags only. Prometheus is the source of truth. All configuration from config.py. Update tracker.json for every change.
 """
+import logging
 from datetime import datetime, timezone
 import json
 import os
 import tempfile
 from typing import List, Dict, Any
 
-from config import ANALYSIS_OUTPUT_PATH
+from config import ANALYSIS_OUTPUT_PATH, setup_logging, validate_config, ConfigValidationError
 from metrics import discovery as discovery_mod
 from metrics import prometheus_client as prom
+from metrics.prometheus_client import PrometheusError, clear_cache
 from analysis import deployment_analysis as dep_analysis
 from analysis import hpa_analysis as hpa_analysis_mod
 from analysis import node_analysis as node_analysis_mod
 from tracker import append_change
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -40,18 +45,22 @@ def _atomic_write(path: str, data: str) -> None:
 
 
 def run_once() -> Dict[str, Any]:
+    # Clear prometheus cache for fresh run
+    clear_cache()
+    
     # 1) Check Prometheus connectivity first
     prometheus_available = False
     try:
         prom.query_range('up')
         prometheus_available = True
-    except prom.PrometheusError as e:
-        print(f"⚠️  PROMETHEUS NOT REACHABLE: {e}")
-        print(f"   Expected URL: {prom.PROMETHEUS_URL}")
-        print(f"   Proceeding with empty metrics...")
+        logger.info("Prometheus connection verified")
+    except PrometheusError as e:
+        logger.warning(f"PROMETHEUS NOT REACHABLE: {e}")
+        logger.warning(f"Expected URL: {prom.PROMETHEUS_URL}")
+        logger.warning("Proceeding with empty metrics...")
     except Exception as e:
-        print(f"⚠️  PROMETHEUS CONNECTION ERROR: {e}")
-        print(f"   Proceeding with empty metrics...")
+        logger.warning(f"PROMETHEUS CONNECTION ERROR: {e}")
+        logger.warning("Proceeding with empty metrics...")
 
     # 2) Discovery
     deps = discovery_mod.discover_deployments()
@@ -98,26 +107,37 @@ def run_once() -> Dict[str, Any]:
 
 
 def main() -> int:
-    print("🔄 Starting Kubernetes Utilization Analysis...")
+    # Setup logging first
+    setup_logging()
+    
+    # Validate configuration
+    try:
+        validate_config()
+        logger.info("Configuration validated successfully")
+    except ConfigValidationError as e:
+        logger.error(f"Configuration error: {e}")
+        return 1
+    
+    logger.info("Starting Kubernetes Utilization Analysis...")
     out = run_once()
     # Write atomically
     try:
         _atomic_write(ANALYSIS_OUTPUT_PATH, json.dumps(out, indent=2))
     except Exception as e:
-        print("❌ Failed to write analysis output:", e)
+        logger.error(f"Failed to write analysis output: {e}")
         return 2
 
     # Update tracker.json best-effort using append-only utility
     try:
         append_change({
-            'files_modified': [ANALYSIS_OUTPUT_PATH, 'orchestrator.py', '.tracker.json'],
+            'files_modified': [ANALYSIS_OUTPUT_PATH],
             'type': 'analysis',
             'description': 'Orchestrator run: produced canonical analysis output'
-        }, tracker_path=os.path.join(os.path.dirname(__file__), '.tracker.json'))
-    except Exception:
-        pass
+        })
+    except Exception as e:
+        logger.warning(f"Failed to update tracker: {e}")
 
-    print(f"✅ Wrote analysis to {ANALYSIS_OUTPUT_PATH}")
+    logger.info(f"Wrote analysis to {ANALYSIS_OUTPUT_PATH}")
     return 0
 
 

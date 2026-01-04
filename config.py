@@ -1,5 +1,31 @@
 import os
+import logging
+import sys
 from typing import Optional
+from urllib.parse import urlparse
+
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FORMAT: str = os.getenv(
+    "LOG_FORMAT", 
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
+def setup_logging():
+    """Configure application-wide logging"""
+    level = getattr(logging, LOG_LEVEL, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format=LOG_FORMAT,
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    # Reduce noise from third-party libraries
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -30,6 +56,7 @@ LLM_MODE: str = os.getenv("LLM_MODE", "local")
 LLM_ENDPOINT_URL: str = os.getenv("LLM_ENDPOINT_URL", "http://localhost:11434")
 LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "llama3:8b")
 LLM_TIMEOUT_SECONDS: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "120"))
+LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")  # For remote LLM authentication
 
 # Phase 2: LLM Prompt Template (user-configurable)
 # Instruction: review and modify this prompt as needed before enabling Phase 2
@@ -135,5 +162,93 @@ __all__ = [
     "LLM_ENDPOINT_URL",
     "LLM_MODEL_NAME",
     "LLM_TIMEOUT_SECONDS",
+    "LLM_API_KEY",
     "PHASE2_LLM_PROMPT",
+    "LOG_LEVEL",
+    "LOG_FORMAT",
+    "setup_logging",
+    "validate_config",
 ]
+
+
+# =============================================================================
+# Configuration Validation
+# =============================================================================
+class ConfigValidationError(Exception):
+    """Raised when configuration validation fails"""
+    pass
+
+
+def _validate_positive_int(name: str, value: int) -> None:
+    if value <= 0:
+        raise ConfigValidationError(f"{name} must be positive, got {value}")
+
+
+def _validate_url(name: str, value: str) -> None:
+    try:
+        result = urlparse(value)
+        if not all([result.scheme, result.netloc]):
+            raise ValueError("Missing scheme or netloc")
+        if result.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid scheme: {result.scheme}")
+    except Exception as e:
+        raise ConfigValidationError(f"{name} is not a valid URL: {value} ({e})")
+
+
+def _validate_llm_mode(value: str) -> None:
+    if value not in ('local', 'remote'):
+        raise ConfigValidationError(
+            f"LLM_MODE must be 'local' or 'remote', got '{value}'"
+        )
+
+
+def validate_config() -> None:
+    """Validate all configuration values on startup
+    
+    Raises:
+        ConfigValidationError: If any configuration value is invalid
+    """
+    errors = []
+    
+    # Validate timeouts are positive
+    try:
+        _validate_positive_int("PROMETHEUS_TIMEOUT_SECONDS", PROMETHEUS_TIMEOUT_SECONDS)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    try:
+        _validate_positive_int("METRICS_WINDOW_MINUTES", METRICS_WINDOW_MINUTES)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    try:
+        _validate_positive_int("LLM_TIMEOUT_SECONDS", LLM_TIMEOUT_SECONDS)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    # Validate URLs
+    try:
+        _validate_url("PROMETHEUS_URL", PROMETHEUS_URL)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    try:
+        _validate_url("LLM_ENDPOINT_URL", LLM_ENDPOINT_URL)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    # Validate LLM mode
+    try:
+        _validate_llm_mode(LLM_MODE)
+    except ConfigValidationError as e:
+        errors.append(str(e))
+    
+    # Validate API key for remote mode
+    if LLM_MODE == 'remote' and PHASE2_ENABLED and not LLM_API_KEY:
+        errors.append("LLM_API_KEY is required when LLM_MODE='remote' and PHASE2_ENABLED=true")
+    
+    if errors:
+        raise ConfigValidationError(
+            "Configuration validation failed:\n  - " + "\n  - ".join(errors)
+        )
+

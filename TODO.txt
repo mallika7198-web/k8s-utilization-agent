@@ -1,0 +1,38 @@
+# TODO: k8s-utilization-agent Improvements
+
+## 🔴 Immediate Fixes (Bugs)
+
+- [ ] Missing test files - tests/ directory is empty
+- [ ] Undefined `PrometheusError` - Referenced in orchestrator.py but never defined
+- [ ] Tracker function mismatch - `append_change()` call signature differs from definition
+
+---
+
+## 🟡 Short-Term Improvements
+
+- [ ] **Logging** - Replace `print()` with Python `logging` module
+- [ ] **Reliability** - Add retry logic with exponential backoff for Prometheus
+- [ ] **Deployment** - Add `/health` and `/ready` endpoints
+- [ ] **Security** - Add API key header for remote LLM calls
+- [ ] **Config** - Validate config values on startup
+
+---
+
+## 🟢 Medium-Term Enhancements
+
+- [ ] **Testing** - Build pytest suite for all modules
+- [ ] **Performance** - Batch Prometheus queries (`pod=~"a|b|c"`)
+- [ ] **Caching** - LRU cache for repeated Prometheus queries
+- [ ] **Observability** - Expose `/metrics` endpoint for self-monitoring
+- [ ] **Deployment** - Add Dockerfile + Helm chart
+- [ ] **CI/CD** - GitHub Actions for lint, test, build
+
+---
+
+## 🔵 Future Features
+
+- [ ] **Historical trends** - Compare current vs past utilization
+- [ ] **Multi-cluster** - Aggregate analysis across clusters
+- [ ] **Alerting integration** - Push warnings to AlertManager/Slack
+- [ ] **YAML export** - Generate recommended resource manifests
+- [ ] **Real-time updates** - WebSocket for live dashboard refresh

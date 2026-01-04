@@ -3,8 +3,11 @@ Phase 2 LLM Client Adapter - Generic HTTP client for local and remote LLMs
 Supports Ollama (local) and remote LLM APIs
 """
 import json
+import logging
 import requests
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClientError(Exception):
@@ -20,6 +23,7 @@ class LLMClient:
         endpoint: Full URL to LLM endpoint
         model: Model name (e.g., 'llama3:8b' or 'gpt-4')
         timeout: Request timeout in seconds
+        api_key: API key for remote authentication (optional for local)
     """
     
     def __init__(
@@ -27,15 +31,20 @@ class LLMClient:
         mode: str,
         endpoint: str,
         model: str,
-        timeout: int = 30
+        timeout: int = 30,
+        api_key: Optional[str] = None
     ):
         self.mode = mode
         self.endpoint = endpoint
         self.model = model
         self.timeout = timeout
+        self.api_key = api_key
         
         if mode not in ('local', 'remote'):
             raise LLMClientError(f"Invalid mode: {mode}. Use 'local' or 'remote'")
+        
+        if mode == 'remote' and not api_key:
+            logger.warning("Remote LLM mode without API key - requests may fail")
     
     def send_prompt(self, prompt: str, context: str = '') -> str:
         """Send prompt to LLM and get response
@@ -107,6 +116,10 @@ class LLMClient:
         headers = {
             'Content-Type': 'application/json'
         }
+        
+        # Add Authorization header if API key is configured
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
         
         payload = {
             'model': self.model,
