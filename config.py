@@ -43,20 +43,7 @@ def _env_bool(name: str, default: bool) -> bool:
 # Can be overridden via PROMETHEUS_ENDPOINTS_JSON environment variable
 _DEFAULT_PROMETHEUS_ENDPOINTS: List[Dict[str, Any]] = [
     {
-        "cluster_name": "prod-cluster-1",
-        "project": "payments",
-        "environment": "prod",
-        "url": "https://prometheus.prod.cluster1.example.com",
-        "owner": "payments-team"
-    },
-    {
-        "cluster_name": "prod-cluster-2",
-        "project": "orders",
-        "environment": "prod",
-        "url": "https://prometheus.prod.cluster2.example.com",
-        "owner": "orders-team"
-    },
-    {
+
         "cluster_name": "local-kind",
         "project": "local",
         "environment": "local",

@@ -7,16 +7,28 @@ Tab Structure:
 - Facts & Evidence (Phase 1): Authoritative data from Prometheus
 - Insights (LLM) (Phase 2): Advisory interpretations for human review
 - Raw JSON: Read-only display of both output files
+
+Multi-cluster support:
+- Cluster selector dropdown to switch between clusters
+- Loads {cluster_name}_analysis_output.json and {cluster_name}_insights_output.json
 """
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from flask import Flask, render_template, jsonify, Response
+from flask import Flask, render_template, jsonify, Response, request
 from datetime import datetime
 
-from config import setup_logging
+from config import (
+    setup_logging, 
+    PROMETHEUS_ENDPOINTS,
+    OUTPUT_DIR,
+    get_analysis_output_path,
+    get_insights_output_path,
+    ACTIVE_CLUSTER
+)
 
 # Setup logging
 setup_logging()
@@ -27,7 +39,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 
 app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'))
 
-# Configuration - use paths from output directory
+# Legacy file paths for backward compatibility
 ANALYSIS_FILE = BASE_DIR / 'output' / 'analysis_output.json'
 INSIGHTS_FILE = BASE_DIR / 'output' / 'insights_output.json'
 
@@ -46,6 +58,39 @@ def _record_request(endpoint: str):
     _metrics['requests_by_endpoint'][endpoint] = _metrics['requests_by_endpoint'].get(endpoint, 0) + 1
 
 
+def get_available_clusters():
+    """Get list of clusters that have analysis output files"""
+    available = []
+    for endpoint in PROMETHEUS_ENDPOINTS:
+        cluster_name = endpoint.get('cluster_name', 'unknown')
+        analysis_path = Path(get_analysis_output_path(cluster_name))
+        if analysis_path.exists():
+            available.append({
+                'cluster_name': cluster_name,
+                'project': endpoint.get('project', ''),
+                'environment': endpoint.get('environment', ''),
+                'has_analysis': True,
+                'has_insights': Path(get_insights_output_path(cluster_name)).exists()
+            })
+    return available
+
+
+def get_cluster_files(cluster_name: str):
+    """Get analysis and insights file paths for a cluster"""
+    # Try cluster-specific files first
+    analysis_path = Path(get_analysis_output_path(cluster_name))
+    insights_path = Path(get_insights_output_path(cluster_name))
+    
+    if analysis_path.exists():
+        return analysis_path, insights_path
+    
+    # Fallback to legacy files
+    if ANALYSIS_FILE.exists():
+        return ANALYSIS_FILE, INSIGHTS_FILE
+    
+    return None, None
+
+
 def load_json(filepath):
     """Load JSON file safely"""
     try:
@@ -62,28 +107,61 @@ def load_json(filepath):
 
 @app.route('/')
 def index():
-    """Main dashboard"""
+    """Main dashboard with cluster selector"""
     _record_request('/')
-    analysis = load_json(ANALYSIS_FILE)
-    insights = load_json(INSIGHTS_FILE)
+    
+    # Get selected cluster from query param or use default
+    selected_cluster = request.args.get('cluster', ACTIVE_CLUSTER)
+    
+    # Get available clusters
+    available_clusters = get_available_clusters()
+    
+    # Get file paths for selected cluster
+    analysis_path, insights_path = get_cluster_files(selected_cluster)
+    
+    if not analysis_path:
+        # No analysis files found at all
+        return render_template('error.html', 
+                             message="No analysis files found. Run: python orchestrator.py",
+                             available_clusters=available_clusters)
+    
+    analysis = load_json(analysis_path)
+    insights = load_json(insights_path) if insights_path else None
     
     if not analysis:
         return render_template('error.html', 
-                             message="Phase 1 analysis not found. Run: python orchestrator.py")
+                             message=f"Analysis not found for cluster '{selected_cluster}'. Run: python orchestrator.py",
+                             available_clusters=available_clusters)
     
     return render_template('dashboard.html',
                          analysis=analysis,
                          insights=insights,
-                         has_insights=insights is not None)
+                         has_insights=insights is not None,
+                         selected_cluster=selected_cluster,
+                         available_clusters=available_clusters)
+
+
+@app.route('/api/clusters')
+def get_clusters():
+    """API endpoint to list available clusters"""
+    _record_request('/api/clusters')
+    return jsonify({
+        'clusters': get_available_clusters(),
+        'active_cluster': ACTIVE_CLUSTER
+    })
 
 
 @app.route('/api/analysis')
 def get_analysis():
     """API endpoint for analysis data"""
     _record_request('/api/analysis')
-    data = load_json(ANALYSIS_FILE)
-    if data:
-        return jsonify(data)
+    cluster = request.args.get('cluster', ACTIVE_CLUSTER)
+    analysis_path, _ = get_cluster_files(cluster)
+    
+    if analysis_path:
+        data = load_json(analysis_path)
+        if data:
+            return jsonify(data)
     return jsonify({"error": "Not found"}), 404
 
 
@@ -91,9 +169,13 @@ def get_analysis():
 def get_insights():
     """API endpoint for insights data"""
     _record_request('/api/insights')
-    data = load_json(INSIGHTS_FILE)
-    if data:
-        return jsonify(data)
+    cluster = request.args.get('cluster', ACTIVE_CLUSTER)
+    _, insights_path = get_cluster_files(cluster)
+    
+    if insights_path:
+        data = load_json(insights_path)
+        if data:
+            return jsonify(data)
     return jsonify({"error": "Insights not available"}), 404
 
 
@@ -109,8 +191,17 @@ def health():
 
 @app.route('/ready')
 def ready():
-    """Readiness check endpoint - verifies analysis file exists"""
+    """Readiness check endpoint - verifies at least one analysis file exists"""
     _record_request('/ready')
+    available = get_available_clusters()
+    if available:
+        return jsonify({
+            "status": "ready",
+            "clusters_available": len(available),
+            "clusters": [c['cluster_name'] for c in available],
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        })
+    # Fallback to legacy file check
     analysis = load_json(ANALYSIS_FILE)
     if analysis:
         return jsonify({
@@ -121,7 +212,7 @@ def ready():
         })
     return jsonify({
         "status": "not_ready",
-        "reason": "Analysis file not found",
+        "reason": "No analysis files found",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     }), 503
 

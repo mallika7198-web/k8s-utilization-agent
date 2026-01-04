@@ -347,14 +347,103 @@
             font-style: italic;
             font-size: 0.85rem;
         }
+        
+        /* Cluster Selector */
+        .cluster-selector {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 12px;
+        }
+        .cluster-selector label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .cluster-selector select {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            min-width: 200px;
+            cursor: pointer;
+        }
+        .cluster-selector select:hover {
+            border-color: var(--accent-blue);
+        }
+        .cluster-selector select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
+        }
+        .cluster-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .cluster-badge.prod { background: rgba(231, 76, 60, 0.2); color: var(--accent-red); }
+        .cluster-badge.staging { background: rgba(243, 156, 18, 0.2); color: var(--accent-yellow); }
+        .cluster-badge.dev { background: rgba(39, 174, 96, 0.2); color: var(--accent-green); }
+        .cluster-badge.local { background: rgba(74, 144, 217, 0.2); color: var(--accent-blue); }
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header-left { flex: 1; }
+        .cluster-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 5px;
+        }
+        .cluster-info .project-env {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
     <header>
         <div class="container">
-            <h1>🎯 Kubernetes Utilization Analysis</h1>
-            <div class="meta">
-                Generated: {{ analysis.generated_at if analysis else 'N/A' }}
+            <div class="header-row">
+                <div class="header-left">
+                    <h1>🎯 Kubernetes Utilization Analysis</h1>
+                    <div class="meta">
+                        Generated: {{ analysis.generated_at if analysis else 'N/A' }}
+                    </div>
+                    {% if available_clusters and available_clusters|length > 1 %}
+                    <div class="cluster-selector">
+                        <label for="cluster-select">Cluster:</label>
+                        <select id="cluster-select" onchange="switchCluster(this.value)">
+                            {% for c in available_clusters %}
+                            <option value="{{ c.cluster_name }}" {% if c.cluster_name == selected_cluster %}selected{% endif %}>
+                                {{ c.cluster_name }} ({{ c.environment }}){% if c.has_insights %} ✨{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="cluster-info">
+                    {% if analysis.cluster_info %}
+                    <div>
+                        <strong>{{ analysis.cluster_info.cluster_name }}</strong>
+                        <span class="cluster-badge {{ analysis.cluster_info.environment }}">{{ analysis.cluster_info.environment }}</span>
+                    </div>
+                    <div class="project-env">
+                        Project: {{ analysis.cluster_info.project }} | Owner: {{ analysis.cluster_info.owner }}
+                    </div>
+                    {% elif selected_cluster %}
+                    <div>
+                        <strong>{{ selected_cluster }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </header>
@@ -1016,6 +1105,11 @@
     </div>
 
     <script>
+        // Cluster switching
+        function switchCluster(clusterName) {
+            window.location.href = '/?cluster=' + encodeURIComponent(clusterName);
+        }
+        
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
