@@ -57,49 +57,145 @@ def sample_analysis_output():
                 "behavior_flags": ["HEALTHY"],
                 "pending_pods_count": 0,
                 "unsafe_to_resize": True
+            },
+            {
+                "deployment": {
+                    "name": "web-frontend",
+                    "namespace": "default",
+                    "replicas": {"desired": 5, "ready": 5, "updated": 5}
+                },
+                "resource_usage": {
+                    "cpu": {"avg_cores": 0.08, "p95_cores": 0.15, "p99_cores": 0.2, "max_cores": 0.25},
+                    "memory": {"avg_bytes": 128000000, "p95_bytes": 150000000, "p99_bytes": 160000000, "max_bytes": 170000000}
+                },
+                "request_allocation": {
+                    "cpu_requests": "250m",
+                    "memory_requests": "256Mi",
+                    "cpu_utilization_percent": 32,
+                    "memory_utilization_percent": 50
+                },
+                "behavior_flags": ["UNDERUTILIZED"],
+                "pending_pods_count": 0,
+                "unsafe_to_resize": False
             }
         ],
-        "hpa_analysis": [],
-        "node_analysis": []
+        "hpa_analysis": [
+            {
+                "hpa": {
+                    "name": "api-server",
+                    "namespace": "default",
+                    "target_deployment": "api-server"
+                },
+                "scaling_config": {
+                    "min_replicas": 2,
+                    "max_replicas": 10,
+                    "current_replicas": 3,
+                    "desired_replicas": 3
+                },
+                "scaling_status": "CAUTION",
+                "scaling_behavior": {
+                    "description": "Scaling based on CPU at 80% target",
+                    "current_load": 75,
+                    "scaling_blocked": False
+                },
+                "scaling_flags": ["AT_CPU_THRESHOLD"],
+                "recommendations": "Monitor CPU trend"
+            }
+        ],
+        "node_analysis": [
+            {
+                "node": {
+                    "name": "node-1",
+                    "labels": {"kubernetes.io/hostname": "node-1"}
+                },
+                "insufficient_data": False,
+                "allocatable_facts": {
+                    "cpu_allocatable": 3.9,
+                    "memory_allocatable": 7500000000
+                },
+                "fragmentation_analysis": {
+                    "cpu_fragmentation": 0.45,
+                    "memory_fragmentation": 0.34
+                },
+                "fragmentation_attribution": {
+                    "large_request_pods": [
+                        {"pod_name": "background-worker-abc", "reason": "CPU request 50% of node"}
+                    ],
+                    "constraint_blockers": [
+                        {"pod_name": "api-server-xyz", "constraint_type": "podAntiAffinity"}
+                    ],
+                    "daemonset_overhead": {
+                        "cpu_percent": 18.0,
+                        "memory_percent": 12.0,
+                        "exceeds_threshold": True,
+                        "contributing_daemonsets": ["node-exporter", "fluentd"]
+                    },
+                    "scale_down_blockers": []
+                }
+            },
+            {
+                "node": {
+                    "name": "node-2",
+                    "labels": {"kubernetes.io/hostname": "node-2"}
+                },
+                "insufficient_data": False,
+                "allocatable_facts": {
+                    "cpu_allocatable": 3.9,
+                    "memory_allocatable": 7500000000
+                },
+                "fragmentation_analysis": {
+                    "cpu_fragmentation": 0.25,
+                    "memory_fragmentation": 0.20
+                }
+            }
+        ],
+        "cross_layer_observations": [
+            {
+                "observation": "Memory pressure in background-worker",
+                "scope": "Deployment",
+                "details": "Uses 100% of allocated memory",
+                "risk_level": "High",
+                "affected_components": ["background-worker"]
+            },
+            {
+                "observation": "Overprovisioned web-frontend",
+                "scope": "Cluster",
+                "details": "Only 32% CPU utilization",
+                "risk_level": "Medium",
+                "affected_components": ["web-frontend"]
+            }
+        ]
     }
 
 
 @pytest.fixture
 def sample_insights_output():
-    """Sample valid LLM insights output for testing"""
+    """Sample valid LLM insights output for testing (new concise format)"""
     return {
-        "cluster_summary": "The cluster is healthy with 3 deployments running.",
-        "patterns": [
-            {
-                "pattern_id": "PATTERN-1",
-                "description": "CPU burstiness in API server",
-                "affected_objects": ["api-server"],
-                "evidence": ["P99 CPU 2.1 vs avg 0.45"]
-            }
-        ],
-        "warnings": [
-            {
-                "warning_id": "WARN-1",
-                "severity": "Medium",
-                "scope": "Deployment",
-                "description": "API server shows bursty CPU usage",
-                "evidence": ["behavior_flags include BURSTY"],
-                "confidence": "High"
-            }
-        ],
-        "action_candidates": [
-            {
-                "action_id": "ACT-1",
-                "scope": "Deployment",
-                "description": "Review API server CPU requests",
-                "expected_impact": "Better resource allocation",
-                "prerequisites": [],
-                "blocked_by": [],
-                "confidence": "Medium"
-            }
-        ],
-        "priorities": "Focus on API server CPU allocation first",
-        "limitations": ["Limited traffic data available"]
+        "summary": "3 deployments, 2 nodes. One fragmented node, one bursty deployment.",
+        "deployment_review": {
+            "bursty": ["api-server"],
+            "underutilized": ["web-frontend"],
+            "memory_pressure": ["background-worker"],
+            "unsafe_to_resize": ["background-worker"]
+        },
+        "hpa_review": {
+            "at_threshold": ["api-server"],
+            "scaling_blocked": [],
+            "scaling_down": []
+        },
+        "node_fragmentation_review": {
+            "fragmented_nodes": ["node-1"],
+            "large_request_pods": ["background-worker-abc"],
+            "constraint_blockers": ["api-server-xyz (podAntiAffinity)"],
+            "daemonset_overhead": ["node-1"],
+            "scale_down_blockers": []
+        },
+        "cross_layer_risks": {
+            "high": ["background-worker"],
+            "medium": ["web-frontend"]
+        },
+        "limitations": []
     }
 
 
@@ -122,13 +218,31 @@ def mock_prometheus_response():
 
 @pytest.fixture
 def mock_llm_response():
-    """Mock LLM API response"""
+    """Mock LLM API response (new concise format)"""
     return json.dumps({
-        "cluster_summary": "Test cluster summary",
-        "patterns": [],
-        "warnings": [],
-        "action_candidates": [],
-        "priorities": "No immediate priorities",
+        "summary": "Test cluster summary",
+        "deployment_review": {
+            "bursty": [],
+            "underutilized": [],
+            "memory_pressure": [],
+            "unsafe_to_resize": []
+        },
+        "hpa_review": {
+            "at_threshold": [],
+            "scaling_blocked": [],
+            "scaling_down": []
+        },
+        "node_fragmentation_review": {
+            "fragmented_nodes": [],
+            "large_request_pods": [],
+            "constraint_blockers": [],
+            "daemonset_overhead": [],
+            "scale_down_blockers": []
+        },
+        "cross_layer_risks": {
+            "high": [],
+            "medium": []
+        },
         "limitations": []
     })
 

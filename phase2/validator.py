@@ -1,8 +1,97 @@
 """
-Phase 2 Insights Validator - Flexible validation of LLM output
-Ensures insights respect Phase 1 safety flags and basic structure
+Phase 2 Insights Validator - Strict validation of LLM output
+Ensures insights only contain categories present in Phase 1 data.
+No new analysis, no invented data, no safety flag overrides.
 """
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Set
+
+
+# Expected top-level keys in Phase 2 output
+EXPECTED_KEYS = {
+    'summary',
+    'deployment_review',
+    'hpa_review', 
+    'node_fragmentation_review',
+    'cross_layer_risks',
+    'limitations'
+}
+
+# Nested keys for each review section
+DEPLOYMENT_REVIEW_KEYS = {'bursty', 'underutilized', 'memory_pressure', 'unsafe_to_resize'}
+HPA_REVIEW_KEYS = {'at_threshold', 'scaling_blocked', 'scaling_down'}
+NODE_FRAG_REVIEW_KEYS = {'fragmented_nodes', 'large_request_pods', 'constraint_blockers', 
+                         'daemonset_overhead', 'scale_down_blockers'}
+CROSS_LAYER_KEYS = {'high', 'medium'}
+
+
+def _extract_phase1_names(analysis_output: Dict[str, Any]) -> Dict[str, Set[str]]:
+    """Extract all valid object names from Phase 1 data"""
+    names = {
+        'deployments': set(),
+        'hpas': set(),
+        'nodes': set(),
+        'pods': set(),
+        'all': set()
+    }
+    
+    # Extract deployment names
+    for dep in analysis_output.get('deployment_analysis', []):
+        dep_info = dep.get('deployment', {})
+        name = dep_info.get('name', '')
+        if name:
+            names['deployments'].add(name)
+            names['all'].add(name)
+    
+    # Extract HPA names
+    for hpa in analysis_output.get('hpa_analysis', []):
+        hpa_info = hpa.get('hpa', {})
+        name = hpa_info.get('name', '')
+        if name:
+            names['hpas'].add(name)
+            names['all'].add(name)
+    
+    # Extract node names and pod names from fragmentation attribution
+    for node in analysis_output.get('node_analysis', []):
+        node_info = node.get('node', {})
+        name = node_info.get('name', '')
+        if name:
+            names['nodes'].add(name)
+            names['all'].add(name)
+        
+        # Extract pods from fragmentation attribution
+        frag_attr = node.get('fragmentation_attribution', {})
+        if frag_attr:
+            for pod in frag_attr.get('large_request_pods', []):
+                pod_name = pod.get('pod_name', '')
+                if pod_name:
+                    names['pods'].add(pod_name)
+                    names['all'].add(pod_name)
+            
+            for blocker in frag_attr.get('constraint_blockers', []):
+                pod_name = blocker.get('pod_name', '')
+                if pod_name:
+                    names['pods'].add(pod_name)
+                    names['all'].add(pod_name)
+            
+            for blocker in frag_attr.get('scale_down_blockers', []):
+                pod_name = blocker.get('pod_name', '')
+                if pod_name:
+                    names['pods'].add(pod_name)
+                    names['all'].add(pod_name)
+    
+    # Extract from cross_layer_observations
+    for obs in analysis_output.get('cross_layer_observations', []):
+        for comp in obs.get('affected_components', []):
+            names['all'].add(comp)
+    
+    return names
+
+
+def _extract_name_from_entry(entry: str) -> str:
+    """Extract base name from an entry like 'pod-name (reason)'"""
+    if '(' in entry:
+        return entry.split('(')[0].strip()
+    return entry.strip()
 
 
 def validate_insights_output(
@@ -11,10 +100,11 @@ def validate_insights_output(
 ) -> Tuple[bool, List[str]]:
     """Validate LLM-generated insights against Phase 1 data
     
-    Checks:
-    1. Top-level structure has some of the required keys
-    2. Content is sensible and not hallucinated
-    3. Safety flags are respected (safe_to_resize, confidence levels, etc.)
+    Strict validation rules:
+    1. Only expected top-level keys allowed
+    2. All referenced objects must exist in Phase 1
+    3. Safety flags must be respected (unsafe_to_resize)
+    4. Insufficient data must be reflected in limitations
     
     Args:
         insights: LLM-generated insights object
@@ -29,68 +119,129 @@ def validate_insights_output(
     if not isinstance(insights, dict):
         return False, ['Insights must be a JSON object']
     
-    # 2. At least one of the required keys should exist
-    expected_keys = {'cluster_summary', 'patterns', 'warnings', 'action_candidates', 'limitations'}
-    found_keys = set(insights.keys()) & expected_keys
+    # 2. Check for expected keys (at least summary and one review section)
+    found_keys = set(insights.keys())
     
-    if len(found_keys) == 0:
-        return False, [f'Insights must have at least one of: {expected_keys}']
+    if 'summary' not in found_keys:
+        errors.append('Missing required key: summary')
     
-    # 3. Cluster summary should be a string
-    if 'cluster_summary' in insights and not isinstance(insights.get('cluster_summary'), str):
-        errors.append('cluster_summary should be a string')
+    review_keys = {'deployment_review', 'hpa_review', 'node_fragmentation_review', 'cross_layer_risks'}
+    if not (found_keys & review_keys):
+        errors.append(f'Must have at least one review section: {review_keys}')
     
-    # 4. Lists should be lists
-    for key in ['patterns', 'warnings', 'action_candidates', 'limitations']:
-        if key in insights:
-            if not isinstance(insights[key], list):
-                errors.append(f'{key} should be a list')
-            else:
-                # Validate list items
-                for i, item in enumerate(insights[key]):
-                    if not isinstance(item, (dict, str)):
-                        errors.append(f'{key}[{i}] should be an object or string')
+    # 3. Validate summary is a string
+    if 'summary' in insights:
+        if not isinstance(insights['summary'], str):
+            errors.append('summary must be a string')
+        elif len(insights['summary']) > 500:
+            errors.append('summary too long (max 500 chars) - should be concise')
     
-    # 5. Check for safety flag violations
-    safe_to_resize = analysis_output.get('safe_to_resize', True)
+    # 4. Extract valid names from Phase 1
+    valid_names = _extract_phase1_names(analysis_output)
     
-    # Check action candidates for resize actions without permission
-    if 'action_candidates' in insights and isinstance(insights['action_candidates'], list):
-        for i, action in enumerate(insights['action_candidates']):
-            if isinstance(action, dict):
-                action_title = action.get('title', '').upper()
-                action_type = action.get('type', '').upper()
-                
-                if not safe_to_resize:
-                    if any(word in action_title for word in ['RESIZE', 'SCALE', 'REPLICA']):
-                        if action_type not in ['RESIZE', 'SCALE']:
-                            continue  # Might be informational
-                        errors.append(
-                            f'action_candidates[{i}]: '
-                            f'Scaling action proposed but Phase 1 marks it as unsafe'
-                        )
+    # 5. Validate deployment_review structure and references
+    if 'deployment_review' in insights:
+        dep_review = insights['deployment_review']
+        if not isinstance(dep_review, dict):
+            errors.append('deployment_review must be an object')
+        else:
+            for key in dep_review:
+                if key not in DEPLOYMENT_REVIEW_KEYS:
+                    errors.append(f'deployment_review.{key} is not a valid category')
+                elif not isinstance(dep_review[key], list):
+                    errors.append(f'deployment_review.{key} must be an array')
+                else:
+                    for entry in dep_review[key]:
+                        if not isinstance(entry, str):
+                            errors.append(f'deployment_review.{key} entries must be strings')
+                        else:
+                            name = _extract_name_from_entry(entry)
+                            if name and name not in valid_names['deployments'] and name not in valid_names['all']:
+                                errors.append(f'deployment_review.{key}: "{name}" not found in Phase 1')
     
-    # 6. Check if insights mention insufficient data (good practice)
-    insufficient_data = any(
-        item.get('insufficient_data', False)
-        for items in [
-            analysis_output.get('deployment_analysis', []),
-            analysis_output.get('hpa_analysis', []),
-            analysis_output.get('node_analysis', [])
-        ]
-        for item in items
+    # 6. Validate hpa_review structure and references
+    if 'hpa_review' in insights:
+        hpa_review = insights['hpa_review']
+        if not isinstance(hpa_review, dict):
+            errors.append('hpa_review must be an object')
+        else:
+            for key in hpa_review:
+                if key not in HPA_REVIEW_KEYS:
+                    errors.append(f'hpa_review.{key} is not a valid category')
+                elif not isinstance(hpa_review[key], list):
+                    errors.append(f'hpa_review.{key} must be an array')
+                else:
+                    for entry in hpa_review[key]:
+                        if not isinstance(entry, str):
+                            errors.append(f'hpa_review.{key} entries must be strings')
+                        else:
+                            name = _extract_name_from_entry(entry)
+                            if name and name not in valid_names['hpas'] and name not in valid_names['all']:
+                                errors.append(f'hpa_review.{key}: "{name}" not found in Phase 1')
+    
+    # 7. Validate node_fragmentation_review structure and references
+    if 'node_fragmentation_review' in insights:
+        node_review = insights['node_fragmentation_review']
+        if not isinstance(node_review, dict):
+            errors.append('node_fragmentation_review must be an object')
+        else:
+            for key in node_review:
+                if key not in NODE_FRAG_REVIEW_KEYS:
+                    errors.append(f'node_fragmentation_review.{key} is not a valid category')
+                elif not isinstance(node_review[key], list):
+                    errors.append(f'node_fragmentation_review.{key} must be an array')
+                else:
+                    for entry in node_review[key]:
+                        if not isinstance(entry, str):
+                            errors.append(f'node_fragmentation_review.{key} entries must be strings')
+                        else:
+                            name = _extract_name_from_entry(entry)
+                            # Allow all Phase 1 names (nodes, pods, etc)
+                            if name and name not in valid_names['all']:
+                                errors.append(f'node_fragmentation_review.{key}: "{name}" not found in Phase 1')
+    
+    # 8. Validate cross_layer_risks
+    if 'cross_layer_risks' in insights:
+        risks = insights['cross_layer_risks']
+        if not isinstance(risks, dict):
+            errors.append('cross_layer_risks must be an object')
+        else:
+            for key in risks:
+                if key not in CROSS_LAYER_KEYS:
+                    errors.append(f'cross_layer_risks.{key} is not a valid category (use high/medium)')
+                elif not isinstance(risks[key], list):
+                    errors.append(f'cross_layer_risks.{key} must be an array')
+    
+    # 9. Validate limitations is a list
+    if 'limitations' in insights:
+        if not isinstance(insights['limitations'], list):
+            errors.append('limitations must be an array')
+        else:
+            for i, lim in enumerate(insights['limitations']):
+                if not isinstance(lim, str):
+                    errors.append(f'limitations[{i}] must be a string')
+    
+    # 10. Safety check: unsafe_to_resize deployments should not appear in resize suggestions
+    unsafe_deployments = set()
+    for dep in analysis_output.get('deployment_analysis', []):
+        if dep.get('unsafe_to_resize', False):
+            dep_name = dep.get('deployment', {}).get('name', '')
+            if dep_name:
+                unsafe_deployments.add(dep_name)
+    
+    # No action_candidates in new format, but check if old format slipped through
+    if 'action_candidates' in insights:
+        errors.append('action_candidates not allowed - Phase 2 groups facts only, no action suggestions')
+    
+    # 11. Check insufficient_data is reflected in limitations
+    has_insufficient_data = any(
+        node.get('insufficient_data', False)
+        for node in analysis_output.get('node_analysis', [])
     )
     
-    if insufficient_data and 'limitations' in insights:
-        limitations = insights['limitations']
-        if isinstance(limitations, list) and len(limitations) > 0:
-            has_data_mention = any(
-                'data' in str(lim).lower() or 'metric' in str(lim).lower() or
-                'insufficient' in str(lim).lower() or 'incomplete' in str(lim).lower()
-                for lim in limitations
-            )
-            if not has_data_mention:
-                # Not an error, just a note
-                pass
+    if has_insufficient_data:
+        limitations = insights.get('limitations', [])
+        if not isinstance(limitations, list) or len(limitations) == 0:
+            errors.append('Phase 1 has insufficient_data nodes but limitations is empty')
     
     return len(errors) == 0, errors

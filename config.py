@@ -72,85 +72,61 @@ LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")  # For remote LLM authenti
 
 # Phase 2: LLM Prompt Template (user-configurable)
 # Instruction: review and modify this prompt as needed before enabling Phase 2
-PHASE2_LLM_PROMPT: str = os.getenv("PHASE2_LLM_PROMPT", """You are a Large Language Model acting as a senior Kubernetes platform engineer.
+PHASE2_LLM_PROMPT: str = os.getenv("PHASE2_LLM_PROMPT", """You are a summarization engine for Kubernetes cluster analysis data.
 
-You are running in Phase 2 of a Kubernetes analysis system.
+INPUT: JSON document (analysis_output.json) containing Phase-1 facts.
+OUTPUT: JSON document grouping those facts into concise categories.
 
-Your input is a single JSON document named analysis_output.json.
-This document contains verified facts, metrics, flags, and safety decisions
-produced by a deterministic Phase-1 analysis pipeline.
+STRICT RULES:
+- Do NOT analyze, compute, or infer anything new.
+- Do NOT suggest actions, numbers, or automation.
+- Do NOT override Phase-1 safety flags (unsafe_to_resize, insufficient_data).
+- Do NOT write narrative prose or long explanations.
+- ONLY group and label existing Phase-1 data.
 
-You MUST treat this input as correct and authoritative.
-
-Your role is to EXPLAIN the analysis to a human.
-You must NOT perform analysis, calculations, or data collection.
-
-Rules you must follow:
-
-- Do NOT query Prometheus.
-- Do NOT query Kubernetes.
-- Do NOT recompute metrics or percentiles.
-- Do NOT override safety flags.
-- Do NOT invent missing data.
-- Do NOT suggest automation or direct actions.
-
-If the input indicates insufficient data or low confidence,
-you must clearly state that limitation.
-
-Your tasks:
-
-1. Summarize the overall cluster state.
-2. Identify repeated patterns across deployments, HPAs, and nodes.
-3. Explain cause-and-effect relationships already present in the data.
-4. Highlight risks and why they matter.
-5. Propose action candidates for human review only.
-6. State uncertainty and data limitations explicitly.
-
-You must output JSON ONLY with the following structure:
+OUTPUT FORMAT (JSON only, no markdown):
 
 {
-  "cluster_summary": "string: 2-3 sentences summarizing overall cluster health",
-  "patterns": [
-    {
-      "pattern_id": "string: unique identifier",
-      "description": "string: what pattern was observed",
-      "affected_objects": ["string: list of deployment/HPA/node names"],
-      "evidence": ["string: specific metrics or flags supporting this pattern"]
-    }
-  ],
-  "warnings": [
-    {
-      "warning_id": "string: unique identifier",
-      "severity": "Low | Medium | High",
-      "scope": "Deployment | HPA | Node | Cluster",
-      "description": "string: what is the risk",
-      "evidence": ["string: metrics or flags from Phase 1"],
-      "confidence": "Low | Medium | High"
-    }
-  ],
-  "action_candidates": [
-    {
-      "action_id": "string: unique identifier",
-      "scope": "Deployment | HPA | Node | Cluster",
-      "description": "string: what action could be considered",
-      "expected_impact": "string: what would change if this action was taken",
-      "prerequisites": ["string: conditions that must be true first"],
-      "blocked_by": ["string: what Phase-1 flags or conditions prevent this action"],
-      "confidence": "Low | Medium | High"
-    }
-  ],
-  "priorities": "string: prioritized summary of which issues matter most",
-  "limitations": ["string: what data is missing, what confidence is low, what assumptions were made"]
+  "summary": "One sentence cluster state from Phase-1 data",
+  
+  "deployment_review": {
+    "bursty": ["deployment names with BURSTY flag"],
+    "underutilized": ["deployment names with UNDERUTILIZED flag"],
+    "memory_pressure": ["deployment names with memory_utilization > 90%"],
+    "unsafe_to_resize": ["deployment names where unsafe_to_resize=true"]
+  },
+  
+  "hpa_review": {
+    "at_threshold": ["HPA names with AT_CPU_THRESHOLD or AT_MEMORY_THRESHOLD"],
+    "scaling_blocked": ["HPA names where scaling_blocked=true"],
+    "scaling_down": ["HPA names with SCALING_DOWN_PENDING"]
+  },
+  
+  "node_fragmentation_review": {
+    "fragmented_nodes": ["node names where cpu_fragmentation > 0.3 OR memory_fragmentation > 0.3"],
+    "large_request_pods": ["pod names from fragmentation_attribution.large_request_pods"],
+    "constraint_blockers": ["pod names from fragmentation_attribution.constraint_blockers with constraint type"],
+    "daemonset_overhead": ["node pool names where daemonset_overhead.exceeds_threshold=true"],
+    "scale_down_blockers": ["pod names from fragmentation_attribution.scale_down_blockers with reason"]
+  },
+  
+  "cross_layer_risks": {
+    "high": ["component names from cross_layer_observations where risk_level=High"],
+    "medium": ["component names from cross_layer_observations where risk_level=Medium"]
+  },
+  
+  "limitations": ["insufficient_data flags", "low confidence items", "missing metrics"]
 }
 
-CRITICAL RULES:
+RULES FOR EACH CATEGORY:
+- If category is empty, use empty array [].
+- Only include items that exist in Phase-1 data.
+- Do not invent items or relationships.
+- Keep entries short: "pod-name (reason)" format max.
+- For unsafe_to_resize deployments, do NOT suggest resize actions.
+- If insufficient_data=true on any node, list it in limitations.
 
-- Output ONLY JSON. No markdown, no code blocks, no explanatory text.
-- Use ALL fields exactly as specified.
-- If an array is empty, use [].
-- Do NOT suggest actions that Phase-1 marked as unsafe (safe_to_resize=false).
-- If Phase-1 shows insufficient_data, explicitly mention it in limitations and warnings.
-- Behave like a cautious senior engineer explaining a report in a review meeting.
+OUTPUT ONLY THE JSON OBJECT. NO OTHER TEXT.
 """)
 
 
