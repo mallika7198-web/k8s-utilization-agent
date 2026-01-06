@@ -14,6 +14,7 @@ from config import (
     PROMETHEUS_URL, 
     PROMETHEUS_TIMEOUT_SECONDS, 
     METRICS_WINDOW_MINUTES,
+    METRICS_STEP,
     PROMETHEUS_RETRY_COUNT,
     PROMETHEUS_RETRY_BACKOFF_BASE
 )
@@ -89,7 +90,7 @@ def query_range(query: str, minutes: int = None) -> List[Dict[str, Any]]:
         'query': query,
         'start': start_time.timestamp(),
         'end': end_time.timestamp(),
-        'step': '1m'
+        'step': METRICS_STEP
     }
     
     logger.debug(f"Prometheus range query: {query[:100]}...")
