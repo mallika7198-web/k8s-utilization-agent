@@ -1,0 +1,829 @@
+#!/usr/bin/env python3
+"""
+Kubernetes Capacity Analysis Tool
+
+Read-only, deterministic analysis for:
+- Node CPU & memory fragmentation
+- Pod CPU & memory request/limit recommendations
+- Node sizing direction
+- HPA misalignment detection
+"""
+import json
+import logging
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+import yaml
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+PROMETHEUS_TIMEOUT = 30
+QUERY_WINDOW = "7d"
+
+# Thresholds
+CPU_FLOOR_PROD = 0.1  # 100m
+CPU_FLOOR_NONPROD = 0.05  # 50m
+SAFETY_FACTOR_PROD = 1.15
+SAFETY_FACTOR_NONPROD = 1.10
+CPU_REQUEST_MULTIPLIER = 1.20
+CPU_LIMIT_REQUEST_MULTIPLIER = 1.50
+CPU_LIMIT_P100_MULTIPLIER = 1.25
+MEMORY_LIMIT_REQUEST_MULTIPLIER = 1.50
+MEMORY_LIMIT_P100_MULTIPLIER = 1.25
+
+# Fragmentation/efficiency thresholds
+LOW_EFFICIENCY_THRESHOLD = 0.3
+HIGH_FRAGMENTATION_THRESHOLD = 0.5
+LOW_CPU_USAGE_RATIO = 0.2  # avg << request
+HIGH_MEMORY_PRESSURE_RATIO = 0.9  # memory_p95 ≈ request
+
+
+# =============================================================================
+# Configuration Loading
+# =============================================================================
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load YAML configuration file"""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def is_prod(env: str) -> bool:
+    """Determine if environment is production"""
+    return env.lower() == "prod"
+
+
+# =============================================================================
+# Prometheus Client
+# =============================================================================
+def prometheus_query(prom_url: str, query: str) -> List[Dict[str, Any]]:
+    """Execute instant query against Prometheus"""
+    try:
+        response = requests.get(
+            f"{prom_url}/api/v1/query",
+            params={"query": query},
+            timeout=PROMETHEUS_TIMEOUT,
+            verify=False
+        )
+        if response.status_code == 200:
+            return response.json().get("data", {}).get("result", [])
+        else:
+            logger.warning(f"Query failed: {response.status_code} - {query[:80]}")
+            return []
+    except requests.RequestException as e:
+        logger.warning(f"Prometheus request failed: {e}")
+        return []
+
+
+def extract_value(result: List[Dict], default: Optional[float] = None) -> Optional[float]:
+    """Extract numeric value from Prometheus result"""
+    if not result:
+        return default
+    try:
+        val = result[0].get("value", [None, None])[1]
+        return float(val) if val is not None else default
+    except (ValueError, IndexError, TypeError):
+        return default
+
+
+def extract_metrics_by_labels(
+    result: List[Dict], 
+    label_keys: List[str]
+) -> Dict[Tuple[str, ...], float]:
+    """Extract metrics grouped by label values"""
+    metrics = {}
+    for item in result:
+        labels = item.get("metric", {})
+        key = tuple(labels.get(k, "") for k in label_keys)
+        try:
+            val = float(item.get("value", [None, None])[1])
+            metrics[key] = val
+        except (ValueError, TypeError):
+            continue
+    return metrics
+
+
+# =============================================================================
+# Prometheus Queries
+# =============================================================================
+class PrometheusQueries:
+    """All Prometheus queries as per specification"""
+    
+    # Pod Requests & Limits
+    POD_CPU_REQUESTS = 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="cpu"})'
+    POD_MEMORY_REQUESTS = 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="memory"})'
+    POD_CPU_LIMITS = 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="cpu"})'
+    POD_MEMORY_LIMITS = 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="memory"})'
+    
+    # Pod Usage - CPU Percentiles (from Prometheus)
+    POD_CPU_P95 = 'quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
+    POD_CPU_P99 = 'quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
+    POD_CPU_P100 = 'max_over_time(rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
+    
+    # Pod Usage - Memory Percentiles (from Prometheus)
+    POD_MEMORY_P95 = 'quantile_over_time(0.95, container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
+    POD_MEMORY_P99 = 'quantile_over_time(0.99, container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
+    POD_MEMORY_P100 = 'max_over_time(container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
+    
+    # Node Metrics
+    NODE_CPU_ALLOCATABLE = 'kube_node_status_allocatable{resource="cpu"}'
+    NODE_MEMORY_ALLOCATABLE = 'kube_node_status_allocatable{resource="memory"}'
+    NODE_CPU_USAGE = 'sum by (instance)(rate(container_cpu_usage_seconds_total[5m]))'
+    NODE_MEMORY_USAGE = 'sum by (instance)(container_memory_working_set_bytes)'
+    NODE_INFO = 'kube_node_info'
+    
+    # Node Usage Percentiles
+    NODE_CPU_P95 = 'quantile_over_time(0.95, sum by (instance)(rate(container_cpu_usage_seconds_total[5m]))[7d:])'
+    NODE_MEMORY_P95 = 'quantile_over_time(0.95, sum by (instance)(container_memory_working_set_bytes)[7d:])'
+    
+    # HPA Metrics
+    HPA_SPEC_MIN = 'kube_horizontalpodautoscaler_spec_min_replicas'
+    HPA_SPEC_MAX = 'kube_horizontalpodautoscaler_spec_max_replicas'
+    HPA_STATUS_CURRENT = 'kube_horizontalpodautoscaler_status_current_replicas'
+    HPA_STATUS_DESIRED = 'kube_horizontalpodautoscaler_status_desired_replicas'
+    HPA_INFO = 'kube_horizontalpodautoscaler_info'
+    HPA_SPEC_TARGET_METRIC = 'kube_horizontalpodautoscaler_spec_target_metric'
+
+
+# =============================================================================
+# Data Fetching
+# =============================================================================
+def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
+    """Fetch all pod-level metrics"""
+    return {
+        "cpu_requests": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_CPU_REQUESTS),
+            ["namespace", "pod"]
+        ),
+        "memory_requests": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_REQUESTS),
+            ["namespace", "pod"]
+        ),
+        "cpu_limits": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_CPU_LIMITS),
+            ["namespace", "pod"]
+        ),
+        "memory_limits": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_LIMITS),
+            ["namespace", "pod"]
+        ),
+        "cpu_p95": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P95),
+            ["namespace", "pod"]
+        ),
+        "cpu_p99": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P99),
+            ["namespace", "pod"]
+        ),
+        "cpu_p100": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P100),
+            ["namespace", "pod"]
+        ),
+        "memory_p95": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P95),
+            ["namespace", "pod"]
+        ),
+        "memory_p99": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P99),
+            ["namespace", "pod"]
+        ),
+        "memory_p100": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P100),
+            ["namespace", "pod"]
+        ),
+    }
+
+
+def fetch_node_metrics(prom_url: str) -> Dict[str, Any]:
+    """Fetch all node-level metrics"""
+    # Get node info for instance -> node mapping
+    node_info_raw = prometheus_query(prom_url, PrometheusQueries.NODE_INFO)
+    instance_to_node = {}
+    for item in node_info_raw:
+        labels = item.get("metric", {})
+        instance = labels.get("instance", "")
+        node = labels.get("node", "")
+        if instance and node:
+            instance_to_node[instance] = node
+    
+    return {
+        "cpu_allocatable": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_CPU_ALLOCATABLE),
+            ["node"]
+        ),
+        "memory_allocatable": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_ALLOCATABLE),
+            ["node"]
+        ),
+        "cpu_usage": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_CPU_USAGE),
+            ["instance"]
+        ),
+        "memory_usage": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_USAGE),
+            ["instance"]
+        ),
+        "cpu_p95": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_CPU_P95),
+            ["instance"]
+        ),
+        "memory_p95": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_P95),
+            ["instance"]
+        ),
+        "instance_to_node": instance_to_node,
+    }
+
+
+def fetch_hpa_metrics(prom_url: str) -> Dict[str, Any]:
+    """Fetch all HPA-level metrics"""
+    return {
+        "min_replicas": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.HPA_SPEC_MIN),
+            ["namespace", "horizontalpodautoscaler"]
+        ),
+        "max_replicas": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.HPA_SPEC_MAX),
+            ["namespace", "horizontalpodautoscaler"]
+        ),
+        "current_replicas": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.HPA_STATUS_CURRENT),
+            ["namespace", "horizontalpodautoscaler"]
+        ),
+        "desired_replicas": extract_metrics_by_labels(
+            prometheus_query(prom_url, PrometheusQueries.HPA_STATUS_DESIRED),
+            ["namespace", "horizontalpodautoscaler"]
+        ),
+        "info": prometheus_query(prom_url, PrometheusQueries.HPA_INFO),
+        "target_metrics": prometheus_query(prom_url, PrometheusQueries.HPA_SPEC_TARGET_METRIC),
+    }
+
+
+# =============================================================================
+# POD_RESIZE Recommendations
+# =============================================================================
+def calculate_pod_resize(
+    namespace: str,
+    pod: str,
+    pod_metrics: Dict[str, Any],
+    env: str
+) -> Optional[Dict[str, Any]]:
+    """Calculate POD_RESIZE recommendation for a single pod"""
+    key = (namespace, pod)
+    
+    # Get current values
+    cpu_request_current = pod_metrics["cpu_requests"].get(key)
+    memory_request_current = pod_metrics["memory_requests"].get(key)
+    cpu_limit_current = pod_metrics["cpu_limits"].get(key)
+    memory_limit_current = pod_metrics["memory_limits"].get(key)
+    
+    # Get usage percentiles
+    cpu_p95 = pod_metrics["cpu_p95"].get(key)
+    cpu_p99 = pod_metrics["cpu_p99"].get(key)
+    cpu_p100 = pod_metrics["cpu_p100"].get(key)
+    memory_p95 = pod_metrics["memory_p95"].get(key)
+    memory_p99 = pod_metrics["memory_p99"].get(key)
+    memory_p100 = pod_metrics["memory_p100"].get(key)
+    
+    # Skip if no usage data
+    if cpu_p99 is None or memory_p99 is None:
+        return None
+    
+    prod = is_prod(env)
+    
+    # CPU Request: max(cpu_p99 × 1.20, cpu_floor)
+    cpu_floor = CPU_FLOOR_PROD if prod else CPU_FLOOR_NONPROD
+    cpu_request_new = max(cpu_p99 * CPU_REQUEST_MULTIPLIER, cpu_floor)
+    
+    # CPU Limit: max(cpu_request_new × 1.50, cpu_p100 × 1.25)
+    cpu_limit_new = max(
+        cpu_request_new * CPU_LIMIT_REQUEST_MULTIPLIER,
+        (cpu_p100 or cpu_p99) * CPU_LIMIT_P100_MULTIPLIER
+    )
+    
+    # Memory Request: memory_p99 × safety_factor
+    safety_factor = SAFETY_FACTOR_PROD if prod else SAFETY_FACTOR_NONPROD
+    memory_request_new = memory_p99 * safety_factor
+    
+    # Memory Limit: max(memory_request_new × 1.50, memory_p100 × 1.25)
+    memory_limit_new = max(
+        memory_request_new * MEMORY_LIMIT_REQUEST_MULTIPLIER,
+        (memory_p100 or memory_p99) * MEMORY_LIMIT_P100_MULTIPLIER
+    )
+    
+    # Check if changes are needed (allow 10% tolerance)
+    cpu_req_change = abs((cpu_request_new - (cpu_request_current or cpu_request_new)) / max(cpu_request_new, 0.001)) > 0.1
+    mem_req_change = abs((memory_request_new - (memory_request_current or memory_request_new)) / max(memory_request_new, 1)) > 0.1
+    
+    if not cpu_req_change and not mem_req_change:
+        return None
+    
+    return {
+        "type": "POD_RESIZE",
+        "namespace": namespace,
+        "pod": pod,
+        "current": {
+            "cpu_request": cpu_request_current,
+            "cpu_limit": cpu_limit_current,
+            "memory_request": memory_request_current,
+            "memory_limit": memory_limit_current,
+        },
+        "recommended": {
+            "cpu_request": round(cpu_request_new, 4),
+            "cpu_limit": round(cpu_limit_new, 4),
+            "memory_request": int(memory_request_new),
+            "memory_limit": int(memory_limit_new),
+        },
+        "usage_percentiles": {
+            "cpu_p95": round(cpu_p95 or 0, 4),
+            "cpu_p99": round(cpu_p99, 4),
+            "cpu_p100": round(cpu_p100 or 0, 4),
+            "memory_p95": int(memory_p95 or 0),
+            "memory_p99": int(memory_p99),
+            "memory_p100": int(memory_p100 or 0),
+        },
+        "explanation": build_pod_resize_explanation(
+            cpu_request_current, cpu_request_new,
+            memory_request_current, memory_request_new,
+            cpu_p99, memory_p99, env
+        ),
+    }
+
+
+def build_pod_resize_explanation(
+    cpu_req_curr: Optional[float],
+    cpu_req_new: float,
+    mem_req_curr: Optional[float],
+    mem_req_new: float,
+    cpu_p99: float,
+    mem_p99: float,
+    env: str
+) -> str:
+    """Build human-readable explanation for POD_RESIZE"""
+    parts = []
+    
+    if cpu_req_curr:
+        cpu_change = ((cpu_req_new - cpu_req_curr) / cpu_req_curr) * 100
+        direction = "increase" if cpu_change > 0 else "decrease"
+        parts.append(f"CPU request {direction} by {abs(cpu_change):.1f}% based on P99 usage ({cpu_p99:.3f} cores)")
+    else:
+        parts.append(f"Set CPU request to {cpu_req_new:.3f} cores based on P99 usage")
+    
+    if mem_req_curr:
+        mem_change = ((mem_req_new - mem_req_curr) / mem_req_curr) * 100
+        direction = "increase" if mem_change > 0 else "decrease"
+        parts.append(f"Memory request {direction} by {abs(mem_change):.1f}% based on P99 usage ({mem_p99 / 1e6:.1f}MB)")
+    else:
+        parts.append(f"Set memory request to {mem_req_new / 1e6:.1f}MB based on P99 usage")
+    
+    safety = "prod (1.15x)" if is_prod(env) else "nonprod (1.10x)"
+    parts.append(f"Safety factor: {safety}")
+    
+    return "; ".join(parts)
+
+
+def analyze_pod_resize(pod_metrics: Dict[str, Any], env: str) -> List[Dict[str, Any]]:
+    """Generate all POD_RESIZE recommendations"""
+    recommendations = []
+    
+    # Get all unique pods
+    all_pods = set(pod_metrics["cpu_requests"].keys())
+    all_pods.update(pod_metrics["cpu_p99"].keys())
+    
+    for key in all_pods:
+        namespace, pod = key
+        rec = calculate_pod_resize(namespace, pod, pod_metrics, env)
+        if rec:
+            recommendations.append(rec)
+    
+    return recommendations
+
+
+# =============================================================================
+# NODE_RIGHTSIZE Recommendations
+# =============================================================================
+def calculate_node_rightsize(
+    node_name: str,
+    node_metrics: Dict[str, Any],
+    pod_metrics: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Calculate NODE_RIGHTSIZE recommendation for a single node"""
+    
+    # Get node capacity
+    cpu_allocatable = node_metrics["cpu_allocatable"].get((node_name,))
+    memory_allocatable = node_metrics["memory_allocatable"].get((node_name,))
+    
+    if not cpu_allocatable or not memory_allocatable:
+        return None
+    
+    # Get node usage (need to map instance -> node)
+    instance = None
+    for inst, nd in node_metrics["instance_to_node"].items():
+        if nd == node_name:
+            instance = inst
+            break
+    
+    if not instance:
+        # Try direct node name as instance
+        instance = node_name
+    
+    node_cpu_p95 = node_metrics["cpu_p95"].get((instance,), 0)
+    node_memory_p95 = node_metrics["memory_p95"].get((instance,), 0)
+    
+    # Calculate sum of pod requests on this node
+    # Note: This is a simplification - in practice you'd need pod->node mapping
+    total_pod_cpu_request = sum(pod_metrics["cpu_requests"].values())
+    total_pod_cpu_p95 = sum(v for v in pod_metrics["cpu_p95"].values() if v)
+    total_pod_memory_request = sum(pod_metrics["memory_requests"].values())
+    
+    # CPU Fragmentation: 1 - (Σ pod_cpu_p95 / Σ pod_cpu_request)
+    cpu_fragmentation = 0
+    if total_pod_cpu_request > 0:
+        cpu_fragmentation = 1 - (total_pod_cpu_p95 / total_pod_cpu_request)
+        cpu_fragmentation = max(0, min(1, cpu_fragmentation))
+    
+    # Free Memory
+    free_memory = memory_allocatable - total_pod_memory_request
+    
+    # Node Efficiency: 0.5 × (Σ pod_cpu_p95 / node_cpu_capacity) + 0.5 × (node_memory_p95 / node_memory_capacity)
+    cpu_efficiency = total_pod_cpu_p95 / cpu_allocatable if cpu_allocatable > 0 else 0
+    memory_efficiency = node_memory_p95 / memory_allocatable if memory_allocatable > 0 else 0
+    node_efficiency = 0.5 * cpu_efficiency + 0.5 * memory_efficiency
+    
+    # Decision: IF node_efficiency is low AND fragmentation is high → NODE_RIGHTSIZE
+    if node_efficiency >= LOW_EFFICIENCY_THRESHOLD or cpu_fragmentation <= HIGH_FRAGMENTATION_THRESHOLD:
+        return None
+    
+    # Determine direction
+    if node_efficiency < 0.2:
+        direction = "down"
+    elif cpu_fragmentation > 0.7:
+        direction = "right-size"
+    else:
+        direction = "down"
+    
+    return {
+        "type": "NODE_RIGHTSIZE",
+        "node": node_name,
+        "direction": direction,
+        "metrics": {
+            "cpu_allocatable": round(cpu_allocatable, 2),
+            "memory_allocatable_bytes": int(memory_allocatable),
+            "cpu_fragmentation": round(cpu_fragmentation, 3),
+            "free_memory_bytes": int(free_memory),
+            "node_efficiency": round(node_efficiency, 3),
+        },
+        "explanation": build_node_rightsize_explanation(
+            node_name, direction, cpu_fragmentation, node_efficiency
+        ),
+    }
+
+
+def build_node_rightsize_explanation(
+    node_name: str,
+    direction: str,
+    fragmentation: float,
+    efficiency: float
+) -> str:
+    """Build explanation for NODE_RIGHTSIZE recommendation"""
+    return (
+        f"Node {node_name} has low efficiency ({efficiency:.1%}) "
+        f"and high CPU fragmentation ({fragmentation:.1%}). "
+        f"Recommendation: {direction}. "
+        f"Consider consolidating workloads or resizing the node."
+    )
+
+
+def analyze_node_rightsize(
+    node_metrics: Dict[str, Any],
+    pod_metrics: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Generate all NODE_RIGHTSIZE recommendations"""
+    recommendations = []
+    
+    for (node_name,) in node_metrics["cpu_allocatable"].keys():
+        rec = calculate_node_rightsize(node_name, node_metrics, pod_metrics)
+        if rec:
+            recommendations.append(rec)
+    
+    return recommendations
+
+
+# =============================================================================
+# HPA_MISALIGNMENT Detection
+# =============================================================================
+def detect_hpa_misalignment(
+    hpa_metrics: Dict[str, Any],
+    pod_metrics: Dict[str, Any],
+    env: str
+) -> List[Dict[str, Any]]:
+    """Detect HPA misalignment issues"""
+    recommendations = []
+    
+    # Parse HPA info to get target deployments
+    hpa_targets = {}
+    for item in hpa_metrics.get("info", []):
+        labels = item.get("metric", {})
+        ns = labels.get("namespace", "")
+        hpa = labels.get("horizontalpodautoscaler", "")
+        target_name = labels.get("scaletargetref_name", "")
+        target_kind = labels.get("scaletargetref_kind", "")
+        if ns and hpa:
+            hpa_targets[(ns, hpa)] = {
+                "target_name": target_name,
+                "target_kind": target_kind,
+            }
+    
+    # Check each HPA
+    for (ns, hpa), target_info in hpa_targets.items():
+        key = (ns, hpa)
+        
+        min_replicas = hpa_metrics["min_replicas"].get(key, 1)
+        max_replicas = hpa_metrics["max_replicas"].get(key, 10)
+        current_replicas = hpa_metrics["current_replicas"].get(key, 0)
+        
+        target_name = target_info.get("target_name", "")
+        
+        # Find pods matching this HPA's target
+        matching_pods = [
+            k for k in pod_metrics["cpu_p95"].keys()
+            if k[0] == ns and target_name in k[1]
+        ]
+        
+        if not matching_pods:
+            continue
+        
+        # Calculate average CPU usage for pods
+        avg_cpu_usage = sum(
+            pod_metrics["cpu_p95"].get(p, 0) for p in matching_pods
+        ) / len(matching_pods)
+        
+        avg_cpu_request = sum(
+            pod_metrics["cpu_requests"].get(p, 0) for p in matching_pods
+        ) / len(matching_pods)
+        
+        avg_memory_p95 = sum(
+            pod_metrics["memory_p95"].get(p, 0) for p in matching_pods
+        ) / len(matching_pods)
+        
+        avg_memory_request = sum(
+            pod_metrics["memory_requests"].get(p, 0) for p in matching_pods
+        ) / len(matching_pods)
+        
+        misalignment_reasons = []
+        
+        # Rule 1: CPU-based HPA with low CPU usage (avg_cpu_usage << cpu_request)
+        if avg_cpu_request > 0 and avg_cpu_usage / avg_cpu_request < LOW_CPU_USAGE_RATIO:
+            misalignment_reasons.append(
+                f"CPU-based HPA with low CPU usage ({avg_cpu_usage:.3f} cores vs {avg_cpu_request:.3f} request)"
+            )
+        
+        # Rule 2: Memory-bound workload with CPU HPA
+        if avg_memory_request > 0 and avg_cpu_request > 0:
+            memory_ratio = avg_memory_p95 / avg_memory_request
+            cpu_ratio = avg_cpu_usage / avg_cpu_request
+            if memory_ratio > HIGH_MEMORY_PRESSURE_RATIO and cpu_ratio < LOW_CPU_USAGE_RATIO:
+                misalignment_reasons.append(
+                    f"Memory-bound workload (memory {memory_ratio:.1%} of request) "
+                    f"but HPA scales on CPU ({cpu_ratio:.1%} of request)"
+                )
+        
+        # Rule 3: minReplicas blocking consolidation
+        if min_replicas > 2 and current_replicas == min_replicas:
+            avg_utilization = 0
+            if avg_cpu_request > 0:
+                avg_utilization = avg_cpu_usage / avg_cpu_request
+            if avg_utilization < 0.3:  # Low utilization
+                misalignment_reasons.append(
+                    f"High minReplicas ({min_replicas}) blocking consolidation "
+                    f"with low utilization ({avg_utilization:.1%})"
+                )
+        
+        if misalignment_reasons:
+            recommendations.append({
+                "type": "HPA_MISALIGNMENT",
+                "namespace": ns,
+                "hpa": hpa,
+                "target": target_info,
+                "config": {
+                    "min_replicas": int(min_replicas),
+                    "max_replicas": int(max_replicas),
+                    "current_replicas": int(current_replicas),
+                },
+                "metrics": {
+                    "avg_cpu_usage": round(avg_cpu_usage, 4),
+                    "avg_cpu_request": round(avg_cpu_request, 4),
+                    "avg_memory_p95": int(avg_memory_p95),
+                    "avg_memory_request": int(avg_memory_request),
+                },
+                "reasons": misalignment_reasons,
+                "explanation": "; ".join(misalignment_reasons),
+            })
+    
+    return recommendations
+
+
+# =============================================================================
+# Email Placeholder
+# =============================================================================
+def send_email(recipients: List[str], subject: str, body: str) -> None:
+    """Send email notification
+    
+    TODO: Integrate email provider (SMTP, SendGrid, SES, etc.)
+    """
+    logger.info(f"[EMAIL PLACEHOLDER] To: {recipients}, Subject: {subject}")
+    pass
+
+
+# =============================================================================
+# Output Generation
+# =============================================================================
+def generate_output(
+    cluster_name: str,
+    env: str,
+    project: str,
+    recommendations: List[Dict[str, Any]],
+    limitations: List[str]
+) -> Dict[str, Any]:
+    """Generate analysis output JSON"""
+    return {
+        "cluster": cluster_name,
+        "env": "prod" if is_prod(env) else "nonprod",
+        "project": project,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "recommendations": recommendations,
+        "limitations": limitations,
+        "summary": {
+            "total_recommendations": len(recommendations),
+            "pod_resize_count": len([r for r in recommendations if r["type"] == "POD_RESIZE"]),
+            "node_rightsize_count": len([r for r in recommendations if r["type"] == "NODE_RIGHTSIZE"]),
+            "hpa_misalignment_count": len([r for r in recommendations if r["type"] == "HPA_MISALIGNMENT"]),
+        },
+    }
+
+
+def write_output(output: Dict[str, Any], project: str, env: str) -> str:
+    """Write output to JSON file"""
+    env_class = "prod" if is_prod(env) else "nonprod"
+    output_dir = os.path.join("output", project, env_class)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    output_path = os.path.join(output_dir, "analysis.json")
+    with open(output_path, 'w') as f:
+        json.dump(output, f, indent=2)
+    
+    return output_path
+
+
+# =============================================================================
+# Main Analysis Pipeline
+# =============================================================================
+def analyze_cluster(
+    cluster_name: str,
+    cluster_config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Run complete analysis for a single cluster"""
+    env = cluster_config.get("env", "nonprod")
+    project = cluster_config.get("project", "unknown")
+    prom_url = cluster_config.get("prom_url", "http://localhost:9090")
+    owner_email = cluster_config.get("owner_email", [])
+    
+    logger.info(f"Analyzing cluster: {cluster_name} (env={env}, project={project})")
+    logger.info(f"Prometheus URL: {prom_url}")
+    
+    limitations = []
+    
+    # Fetch all metrics
+    try:
+        pod_metrics = fetch_pod_metrics(prom_url)
+        logger.info(f"Fetched metrics for {len(pod_metrics.get('cpu_requests', {}))} pods")
+    except Exception as e:
+        logger.error(f"Failed to fetch pod metrics: {e}")
+        limitations.append(f"Pod metrics unavailable: {e}")
+        pod_metrics = {k: {} for k in [
+            "cpu_requests", "memory_requests", "cpu_limits", "memory_limits",
+            "cpu_p95", "cpu_p99", "cpu_p100", "memory_p95", "memory_p99", "memory_p100"
+        ]}
+    
+    try:
+        node_metrics = fetch_node_metrics(prom_url)
+        logger.info(f"Fetched metrics for {len(node_metrics.get('cpu_allocatable', {}))} nodes")
+    except Exception as e:
+        logger.error(f"Failed to fetch node metrics: {e}")
+        limitations.append(f"Node metrics unavailable: {e}")
+        node_metrics = {
+            "cpu_allocatable": {}, "memory_allocatable": {},
+            "cpu_usage": {}, "memory_usage": {},
+            "cpu_p95": {}, "memory_p95": {},
+            "instance_to_node": {},
+        }
+    
+    try:
+        hpa_metrics = fetch_hpa_metrics(prom_url)
+        logger.info(f"Fetched metrics for {len(hpa_metrics.get('min_replicas', {}))} HPAs")
+    except Exception as e:
+        logger.error(f"Failed to fetch HPA metrics: {e}")
+        limitations.append(f"HPA metrics unavailable: {e}")
+        hpa_metrics = {
+            "min_replicas": {}, "max_replicas": {},
+            "current_replicas": {}, "desired_replicas": {},
+            "info": [], "target_metrics": [],
+        }
+    
+    # Generate recommendations
+    recommendations = []
+    
+    # POD_RESIZE
+    pod_resize_recs = analyze_pod_resize(pod_metrics, env)
+    recommendations.extend(pod_resize_recs)
+    logger.info(f"Generated {len(pod_resize_recs)} POD_RESIZE recommendations")
+    
+    # NODE_RIGHTSIZE
+    node_rightsize_recs = analyze_node_rightsize(node_metrics, pod_metrics)
+    recommendations.extend(node_rightsize_recs)
+    logger.info(f"Generated {len(node_rightsize_recs)} NODE_RIGHTSIZE recommendations")
+    
+    # HPA_MISALIGNMENT
+    hpa_misalignment_recs = detect_hpa_misalignment(hpa_metrics, pod_metrics, env)
+    recommendations.extend(hpa_misalignment_recs)
+    logger.info(f"Generated {len(hpa_misalignment_recs)} HPA_MISALIGNMENT recommendations")
+    
+    # Generate output
+    output = generate_output(cluster_name, env, project, recommendations, limitations)
+    
+    # Write output
+    output_path = write_output(output, project, env)
+    logger.info(f"Wrote analysis to {output_path}")
+    
+    # Send email notification (placeholder)
+    if owner_email and recommendations:
+        send_email(
+            recipients=owner_email,
+            subject=f"[K8s Analysis] {len(recommendations)} recommendations for {cluster_name}",
+            body=f"Analysis complete. See {output_path} for details."
+        )
+    
+    return output
+
+
+def main(config_path: str = "clusters.yaml") -> int:
+    """Main entry point"""
+    logger.info("=" * 60)
+    logger.info("Kubernetes Capacity Analysis Tool")
+    logger.info("=" * 60)
+    
+    # Load configuration
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found: {config_path}")
+        return 1
+    except yaml.YAMLError as e:
+        logger.error(f"Invalid YAML configuration: {e}")
+        return 1
+    
+    clusters = config.get("clusters", {})
+    if not clusters:
+        logger.error("No clusters defined in configuration")
+        return 1
+    
+    logger.info(f"Found {len(clusters)} cluster(s) to analyze")
+    
+    # Process each cluster
+    success_count = 0
+    failed_count = 0
+    
+    for cluster_name, cluster_config in clusters.items():
+        logger.info("-" * 60)
+        try:
+            analyze_cluster(cluster_name, cluster_config)
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Analysis failed for {cluster_name}: {e}")
+            failed_count += 1
+    
+    # Summary
+    logger.info("=" * 60)
+    logger.info(f"Analysis complete: {success_count} succeeded, {failed_count} failed")
+    logger.info("=" * 60)
+    
+    return 0 if failed_count == 0 else 1
+
+
+if __name__ == "__main__":
+    config_file = sys.argv[1] if len(sys.argv) > 1 else "clusters.yaml"
+    sys.exit(main(config_file))
