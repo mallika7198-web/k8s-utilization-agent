@@ -1,0 +1,5 @@
+pytest
+requests
+flask
+jinja2
+pyyaml
