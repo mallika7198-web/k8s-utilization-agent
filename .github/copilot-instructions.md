@@ -310,3 +310,154 @@ Viewer must fail gracefully if JSON is missing
 Start now and generate all three files.
 
 Focus on clarity over visual polish.
+
+
+
+You are an expert Python platform engineer with deep Kubernetes and Prometheus expertise.
+
+You are working on a read-only Kubernetes capacity analysis tool that consumes Prometheus metrics and produces human-readable JSON output for SREs, DevOps engineers, and platform owners.
+
+The tool already calculates:
+
+Pod request & limit recommendations
+
+Node fragmentation and efficiency
+
+Node sizing direction
+
+HPA misalignment
+
+Do NOT change any existing calculation logic or PromQL queries.
+Your task is to improve output clarity, explainability, and summary semantics only.
+
+🎯 Objectives
+1️⃣ Improve summary section (Human-Readable)
+
+Replace simple counts like:
+
+"pod_resize_count": 1
+
+
+With affected vs total format:
+
+"summary": {
+  "pods": {
+    "affected": X,
+    "total": Y,
+    "text": "X out of Y pods need resizing"
+  },
+  "nodes": {
+    "affected": A,
+    "total": B,
+    "text": "A out of B nodes show inefficiency"
+  },
+  "hpa": {
+    "affected": C,
+    "total": D,
+    "text": "C out of D HPAs are misaligned"
+  }
+}
+
+
+Rules:
+
+total = total scanned entities (pods / nodes / HPAs)
+
+affected = entities with recommendations
+
+text must be concise and human-friendly
+
+2️⃣ Enhance Node Metrics (Memory Visibility)
+
+Where node memory allocatable is reported:
+
+Keep raw bytes
+
+ALSO include GB for readability
+
+Example:
+
+"memory_allocatable": {
+  "bytes": 34359738368,
+  "gb": 32
+}
+
+
+Humans should never need to interpret raw bytes.
+
+3️⃣ Clarify Node Recommendation Meaning
+
+Replace ambiguous terms like:
+
+"direction": "down"
+
+
+With explicit intent:
+
+"recommendation": {
+  "action": "DOWNSIZE_NODE",
+  "meaning": "Node is underutilized and can be replaced with a smaller instance to reduce cost"
+}
+
+
+Use standardized actions only:
+
+DOWNSIZE_NODE – node is underutilized
+
+RIGHT_SIZE_NODE – fragmentation issue, same size class
+
+CONSOLIDATE_NODE – workloads can move, node removable
+
+NO_ACTION – node is healthy
+
+Do not invent new actions beyond these.
+
+4️⃣ Preserve Explainability
+
+Every recommendation must:
+
+Keep existing explanation
+
+Avoid changing formulas or thresholds
+
+Avoid adding new metrics
+
+This task is presentation & clarity only, not analysis.
+
+5️⃣ Output Stability Rules (Strict)
+
+JSON structure must remain deterministic
+
+No reordering of existing recommendation logic
+
+No new Prometheus calls
+
+No new calculations
+
+No breaking changes to downstream consumers
+
+✅ Expected Result
+
+After changes:
+
+Summaries read like reports, not counters
+
+Node recommendations are self-explanatory
+
+Memory values are human-readable
+
+Output is UI-ready and email-friendly
+
+Engineers no longer ask “what does down mean?”
+
+🧠 Design Principle (Important)
+
+If a platform manager reads the JSON directly, they should understand:
+
+What is wrong
+
+How many are affected
+
+What the recommendation means
+
+…without knowing Kubernetes internals.
