@@ -203,6 +203,13 @@ function renderHeader() {
     clusterName.textContent = currentData.cluster || '--';
     projectName.textContent = currentData.project || '--';
     generatedAt.textContent = formatTimestamp(currentData.generated_at);
+    
+    // Show analysis window (e.g., "7d" -> "Based on 7 days data")
+    const analysisWindow = document.getElementById('analysis-window');
+    if (analysisWindow && currentData.analysis_window) {
+        const days = currentData.analysis_window.replace('d', '');
+        analysisWindow.textContent = `${days} days data`;
+    }
 
     const env = currentData.env || 'unknown';
     envBadge.textContent = env;

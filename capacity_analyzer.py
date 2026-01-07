@@ -888,6 +888,7 @@ def generate_output(
         "env": "prod" if is_prod(env) else "nonprod",
         "project": project,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_window": QUERY_WINDOW,  # e.g., "7d" - how many days of data used
         "recommendations": recommendations,
         "limitations": all_limitations,
         "summary": {

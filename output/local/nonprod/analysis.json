@@ -2,7 +2,8 @@
   "cluster": "local-kind",
   "env": "nonprod",
   "project": "local",
-  "generated_at": "2026-01-07T05:59:38.576905+00:00",
+  "generated_at": "2026-01-07T06:12:02.355448+00:00",
+  "analysis_window": "7d",
   "recommendations": [
     {
       "type": "POD_RESIZE",
