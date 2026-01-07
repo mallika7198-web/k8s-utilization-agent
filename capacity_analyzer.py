@@ -400,6 +400,10 @@ def calculate_pod_resize(
     if not cpu_req_change and not mem_req_change:
         return None
     
+    # Calculate savings (negative = reduction/savings, positive = increase needed)
+    cpu_request_diff = cpu_request_new - (cpu_request_current or 0)
+    memory_request_diff = int(memory_request_new) - int(memory_request_current or 0)
+    
     return {
         "type": "POD_RESIZE",
         "namespace": namespace,
@@ -415,6 +419,11 @@ def calculate_pod_resize(
             "cpu_limit": round(cpu_limit_new, 4),
             "memory_request": int(memory_request_new),
             "memory_limit": int(memory_limit_new),
+        },
+        "savings": {
+            "cpu_cores": round(-cpu_request_diff, 4),  # Positive = savings
+            "memory_bytes": -memory_request_diff,  # Positive = savings
+            "memory_mb": round(-memory_request_diff / (1024 * 1024), 1),
         },
         "usage_percentiles": {
             "cpu_p95": round(cpu_p95 or 0, 4),
@@ -464,9 +473,20 @@ def build_pod_resize_explanation(
     return "; ".join(parts)
 
 
-def analyze_pod_resize(pod_metrics: Dict[str, Any], env: str) -> List[Dict[str, Any]]:
-    """Generate all POD_RESIZE recommendations"""
+def analyze_pod_resize(
+    pod_metrics: Dict[str, Any], 
+    env: str,
+    exclude_namespaces: List[str] = None
+) -> List[Dict[str, Any]]:
+    """Generate all POD_RESIZE recommendations
+    
+    Args:
+        pod_metrics: Pod metrics from Prometheus
+        env: Environment (prod/nonprod)
+        exclude_namespaces: List of namespaces to skip
+    """
     recommendations = []
+    exclude_namespaces = exclude_namespaces or []
     
     # Get all unique pods
     all_pods = set(pod_metrics["cpu_requests"].keys())
@@ -474,6 +494,9 @@ def analyze_pod_resize(pod_metrics: Dict[str, Any], env: str) -> List[Dict[str, 
     
     for key in all_pods:
         namespace, pod = key
+        # Skip excluded namespaces
+        if namespace in exclude_namespaces:
+            continue
         rec = calculate_pod_resize(namespace, pod, pod_metrics, env)
         if rec:
             recommendations.append(rec)
@@ -826,14 +849,39 @@ def generate_output(
             all_limitations.append(rec["limitation"])
     
     # Calculate affected counts
-    pod_resize_count = len([r for r in recommendations if r["type"] == "POD_RESIZE"])
+    pod_resize_recs = [r for r in recommendations if r["type"] == "POD_RESIZE"]
+    pod_resize_count = len(pod_resize_recs)
     node_rightsize_count = len([r for r in recommendations if r["type"] == "NODE_RIGHTSIZE"])
     hpa_misalignment_count = len([r for r in recommendations if r["type"] == "HPA_MISALIGNMENT"])
+    
+    # Calculate total savings from POD_RESIZE recommendations
+    total_cpu_savings = sum(r.get("savings", {}).get("cpu_cores", 0) for r in pod_resize_recs)
+    total_memory_savings_bytes = sum(r.get("savings", {}).get("memory_bytes", 0) for r in pod_resize_recs)
+    total_memory_savings_mb = round(total_memory_savings_bytes / (1024 * 1024), 1)
+    total_memory_savings_gb = round(total_memory_savings_bytes / (1024 ** 3), 2)
     
     # Get totals (scanned entities)
     total_pods = totals.get("pods", 0)
     total_nodes = totals.get("nodes", 0)
     total_hpas = totals.get("hpas", 0)
+    
+    # Build savings summary text
+    cpu_savings_text = ""
+    mem_savings_text = ""
+    
+    if total_cpu_savings > 0:
+        cpu_savings_text = f"Save {total_cpu_savings:.2f} CPU cores"
+    elif total_cpu_savings < 0:
+        cpu_savings_text = f"Need {abs(total_cpu_savings):.2f} more CPU cores"
+    
+    if total_memory_savings_bytes > 0:
+        mem_val = f"{total_memory_savings_gb:.1f}GB" if abs(total_memory_savings_gb) >= 1 else f"{total_memory_savings_mb:.0f}MB"
+        mem_savings_text = f"Save {mem_val} memory"
+    elif total_memory_savings_bytes < 0:
+        mem_val = f"{abs(total_memory_savings_gb):.1f}GB" if abs(total_memory_savings_gb) >= 1 else f"{abs(total_memory_savings_mb):.0f}MB"
+        mem_savings_text = f"Need {mem_val} more memory"
+    
+    savings_parts = [p for p in [cpu_savings_text, mem_savings_text] if p]
     
     return {
         "cluster": cluster_name,
@@ -858,6 +906,13 @@ def generate_output(
                 "affected": hpa_misalignment_count,
                 "total": total_hpas,
                 "text": f"{hpa_misalignment_count} out of {total_hpas} HPAs are misaligned" if total_hpas > 0 else "No HPAs scanned"
+            },
+            "potential_savings": {
+                "cpu_cores": round(total_cpu_savings, 2),
+                "memory_bytes": total_memory_savings_bytes,
+                "memory_mb": total_memory_savings_mb,
+                "memory_gb": total_memory_savings_gb,
+                "text": "; ".join(savings_parts) if savings_parts else "No significant changes"
             },
             # Keep legacy fields for backward compatibility
             "pod_resize_count": pod_resize_count,
@@ -892,9 +947,12 @@ def analyze_cluster(
     project = cluster_config.get("project", "unknown")
     prom_url = cluster_config.get("prom_url", "http://localhost:9090")
     owner_email = cluster_config.get("owner_email", [])
+    exclude_namespaces = cluster_config.get("exclude_namespaces", [])
     
     logger.info(f"Analyzing cluster: {cluster_name} (env={env}, project={project})")
     logger.info(f"Prometheus URL: {prom_url}")
+    if exclude_namespaces:
+        logger.info(f"Excluding namespaces: {exclude_namespaces}")
     
     limitations = []
     
@@ -939,7 +997,7 @@ def analyze_cluster(
     recommendations = []
     
     # POD_RESIZE
-    pod_resize_recs = analyze_pod_resize(pod_metrics, env)
+    pod_resize_recs = analyze_pod_resize(pod_metrics, env, exclude_namespaces)
     recommendations.extend(pod_resize_recs)
     logger.info(f"Generated {len(pod_resize_recs)} POD_RESIZE recommendations")
     

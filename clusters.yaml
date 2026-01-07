@@ -8,6 +8,11 @@ clusters:
     prom_url: http://localhost:9090
     owner_email:
       - dev@localhost
+    # Namespaces to exclude from analysis (optional)
+    exclude_namespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
 
 #  stage-project1:
 #    env: stage
@@ -15,6 +20,8 @@ clusters:
 #    prom_url: http://prometheus.stage.example
 #    owner_email:
 #      - email1@example.com
+#    exclude_namespaces:
+#      - kube-system
 
 #  prod-project2:
 #    env: prod
@@ -22,3 +29,6 @@ clusters:
 #    prom_url: http://prometheus.prod.example
 #    owner_email:
 #      - owner@example.com
+#    exclude_namespaces:
+#      - kube-system
+#      - monitoring

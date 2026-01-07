@@ -238,6 +238,52 @@ function renderSummary() {
     if (hpaSummaryText && summary.hpa?.text) {
         hpaSummaryText.textContent = summary.hpa.text;
     }
+    
+    // Render potential savings
+    const savingsCount = document.getElementById('savings-count');
+    const savingsSummaryText = document.getElementById('savings-summary-text');
+    const savingsCard = document.querySelector('.savings-card');
+    
+    if (summary.potential_savings) {
+        const cpuSavings = summary.potential_savings.cpu_cores || 0;
+        const memSavingsGb = summary.potential_savings.memory_gb || 0;
+        const memSavingsMb = summary.potential_savings.memory_mb || 0;
+        
+        // Build display parts
+        let displayParts = [];
+        
+        if (cpuSavings > 0.01) {
+            displayParts.push(`↓${cpuSavings.toFixed(2)} cores`);
+        } else if (cpuSavings < -0.01) {
+            displayParts.push(`↑${Math.abs(cpuSavings).toFixed(2)} cores`);
+        }
+        
+        if (memSavingsGb >= 1) {
+            displayParts.push(`↓${memSavingsGb.toFixed(1)}GB`);
+        } else if (memSavingsGb <= -1) {
+            displayParts.push(`↑${Math.abs(memSavingsGb).toFixed(1)}GB`);
+        } else if (memSavingsMb > 10) {
+            displayParts.push(`↓${Math.abs(memSavingsMb).toFixed(0)}MB`);
+        } else if (memSavingsMb < -10) {
+            displayParts.push(`↑${Math.abs(memSavingsMb).toFixed(0)}MB`);
+        }
+        
+        savingsCount.textContent = displayParts.length > 0 ? displayParts.join(' ') : '--';
+        savingsSummaryText.textContent = summary.potential_savings.text || '';
+        
+        // Color the card based on net savings direction
+        // If we save more than we need, it's positive overall
+        const netPositive = cpuSavings > 0 || (cpuSavings === 0 && memSavingsGb > 0);
+        const netNegative = cpuSavings < 0 || (cpuSavings === 0 && memSavingsGb < 0);
+        
+        if (netPositive) {
+            savingsCard?.classList.add('positive');
+            savingsCard?.classList.remove('negative');
+        } else if (netNegative) {
+            savingsCard?.classList.add('negative');
+            savingsCard?.classList.remove('positive');
+        }
+    }
 }
 
 /**
@@ -253,6 +299,32 @@ function renderPodResize() {
 
     let html = '';
     for (const rec of recs) {
+        // Calculate savings display
+        const cpuSavings = rec.savings?.cpu_cores || 0;
+        const memSavingsMb = rec.savings?.memory_mb || 0;
+        const hasSavings = Math.abs(cpuSavings) > 0.001 || Math.abs(memSavingsMb) > 0.1;
+        
+        let savingsHtml = '';
+        if (hasSavings) {
+            // Positive = we can save (reduce), Negative = we need more (increase)
+            const cpuIcon = cpuSavings > 0 ? '↓' : '↑';
+            const cpuClass = cpuSavings > 0 ? 'savings-positive' : 'savings-negative';
+            const cpuText = `${cpuIcon}${Math.abs(cpuSavings).toFixed(3)} cores`;
+            
+            const memIcon = memSavingsMb > 0 ? '↓' : '↑';
+            const memClass = memSavingsMb > 0 ? 'savings-positive' : 'savings-negative';
+            const memText = `${memIcon}${Math.abs(memSavingsMb).toFixed(0)} MB`;
+            
+            savingsHtml = `
+                <div class="savings-row">
+                    <span class="savings-label">Impact:</span>
+                    <span class="${cpuClass}">${cpuText}</span>
+                    <span class="savings-sep">|</span>
+                    <span class="${memClass}">${memText}</span>
+                </div>
+            `;
+        }
+        
         html += `
             <div class="rec-card">
                 <div class="rec-card-header">
@@ -261,6 +333,7 @@ function renderPodResize() {
                         <div class="rec-card-subtitle">${esc(rec.namespace)}</div>
                     </div>
                 </div>
+                ${savingsHtml}
                 <div class="data-grid">
                     <div class="data-item">
                         <span class="data-label">Current CPU Req</span>

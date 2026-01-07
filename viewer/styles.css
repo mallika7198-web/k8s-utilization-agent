@@ -367,6 +367,47 @@ tr:hover {
     background: #f8f9fa;
 }
 
+/* Savings Display */
+.savings-card.positive .count {
+    color: #28a745;
+}
+
+.savings-card.negative .count {
+    color: #dc3545;
+}
+
+.savings-row {
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.savings-label {
+    font-weight: 600;
+    color: #333;
+}
+
+.savings-sep {
+    color: #aaa;
+}
+
+.savings-positive {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.savings-negative {
+    color: #dc3545;
+    font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .controls {
