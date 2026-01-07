@@ -341,38 +341,67 @@ function renderPodResize() {
                     </div>
                 </div>
                 ${savingsHtml}
-                <div class="data-grid">
-                    <div class="data-item">
-                        <span class="data-label">Current CPU Req</span>
-                        <span class="data-value">${formatCPU(rec.current?.cpu_request)}</span>
+                <div class="data-section">
+                    <div class="data-section-title">Requests</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">Current CPU Req</span>
+                            <span class="data-value">${formatCPU(rec.current?.cpu_request)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Recommended CPU Req</span>
+                            <span class="data-value">${formatCPU(rec.recommended?.cpu_request)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Current Mem Req</span>
+                            <span class="data-value">${formatMemory(rec.current?.memory_request)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Recommended Mem Req</span>
+                            <span class="data-value">${formatMemory(rec.recommended?.memory_request)}</span>
+                        </div>
                     </div>
-                    <div class="data-item">
-                        <span class="data-label">Recommended CPU Req</span>
-                        <span class="data-value">${formatCPU(rec.recommended?.cpu_request)}</span>
+                </div>
+                <div class="data-section">
+                    <div class="data-section-title">Limits</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">Current CPU Limit</span>
+                            <span class="data-value">${formatCPU(rec.current?.cpu_limit)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Recommended CPU Limit</span>
+                            <span class="data-value">${formatCPU(rec.recommended?.cpu_limit)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Current Mem Limit</span>
+                            <span class="data-value">${formatMemory(rec.current?.memory_limit)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Recommended Mem Limit</span>
+                            <span class="data-value">${formatMemory(rec.recommended?.memory_limit)}</span>
+                        </div>
                     </div>
-                    <div class="data-item">
-                        <span class="data-label">Current Mem Req</span>
-                        <span class="data-value">${formatMemory(rec.current?.memory_request)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Recommended Mem Req</span>
-                        <span class="data-value">${formatMemory(rec.recommended?.memory_request)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">CPU P95</span>
-                        <span class="data-value">${formatCPU(rec.usage_percentiles?.cpu_p95)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">CPU P99</span>
-                        <span class="data-value">${formatCPU(rec.usage_percentiles?.cpu_p99)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Mem P95</span>
-                        <span class="data-value">${formatMemory(rec.usage_percentiles?.memory_p95)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Mem P99</span>
-                        <span class="data-value">${formatMemory(rec.usage_percentiles?.memory_p99)}</span>
+                </div>
+                <div class="data-section">
+                    <div class="data-section-title">Usage Percentiles</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">CPU P95</span>
+                            <span class="data-value">${formatCPU(rec.usage_percentiles?.cpu_p95)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">CPU P99</span>
+                            <span class="data-value">${formatCPU(rec.usage_percentiles?.cpu_p99)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Mem P95</span>
+                            <span class="data-value">${formatMemory(rec.usage_percentiles?.memory_p95)}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Mem P99</span>
+                            <span class="data-value">${formatMemory(rec.usage_percentiles?.memory_p99)}</span>
+                        </div>
                     </div>
                 </div>
                 <div class="explanation">${esc(rec.explanation)}</div>
@@ -384,7 +413,7 @@ function renderPodResize() {
 }
 
 /**
- * Render NODE_RIGHTSIZE recommendations
+ * Render NODE_RIGHTSIZE recommendations (new cluster-level format)
  */
 function renderNodeRightsize() {
     const recs = (currentData.recommendations || []).filter(r => r.type === 'NODE_RIGHTSIZE');
@@ -396,54 +425,121 @@ function renderNodeRightsize() {
 
     let html = '';
     for (const rec of recs) {
-        const badgeClass = rec.direction === 'down' ? 'down' : 'right-size';
-        const fragmentation = rec.metrics?.cpu_fragmentation_undefined 
-            ? 'N/A' 
-            : formatPercent(rec.metrics?.cpu_fragmentation);
+        // Direction badge: up | down | right-size
+        const direction = rec.direction || 'unknown';
+        const badgeClass = direction === 'down' ? 'down' : (direction === 'up' ? 'up' : 'right-size');
+        const badgeText = direction.toUpperCase();
         
-        // Support both new format (memory_allocatable.gb) and legacy (memory_allocatable_bytes)
-        const memAllocatable = rec.metrics?.memory_allocatable?.gb 
-            ? `${rec.metrics.memory_allocatable.gb} GB`
-            : formatMemory(rec.metrics?.memory_allocatable_bytes);
+        // Confidence indicator
+        const confidence = rec.confidence || 'low';
+        const confidenceClass = confidence === 'high' ? 'confidence-high' : 
+                               (confidence === 'medium' ? 'confidence-medium' : 'confidence-low');
         
-        // Get recommendation action/meaning if available (new format)
-        const action = rec.recommendation?.action || rec.direction?.toUpperCase();
-        const meaning = rec.recommendation?.meaning || '';
+        // Metrics
+        const nodeCount = rec.metrics?.current_node_count ?? '--';
+        const requiredNodes = rec.metrics?.required_nodes ?? '--';
+        const efficiency = formatPercent(rec.metrics?.node_efficiency);
+        const efficiencyState = rec.metrics?.efficiency_state || 'unknown';
+        const cpuPressure = formatPercent(rec.metrics?.cpu_pressure);
+        const memPressure = formatPercent(rec.metrics?.memory_pressure);
+        const isImbalanced = rec.metrics?.shape_imbalanced ? 'Yes' : 'No';
+        const podCount = rec.metrics?.pod_count ?? '--';
+        
+        // Node capacity
+        const nodeCpu = rec.metrics?.node_cpu_capacity ?? '--';
+        const nodeMem = rec.metrics?.node_memory_capacity?.gb 
+            ? `${rec.metrics.node_memory_capacity.gb} GB`
+            : '--';
+        
+        // Total required resources
+        const totalCpuReq = rec.metrics?.total_cpu_required 
+            ? `${rec.metrics.total_cpu_required.toFixed(2)} cores`
+            : '--';
+        const totalMemReq = rec.metrics?.total_memory_required?.gb 
+            ? `${rec.metrics.total_memory_required.gb.toFixed(1)} GB`
+            : '--';
 
         html += `
-            <div class="rec-card">
+            <div class="rec-card node-rec-card">
                 <div class="rec-card-header">
                     <div>
-                        <div class="rec-card-title">${esc(rec.node)}</div>
-                        <div class="rec-card-subtitle">Node</div>
+                        <div class="rec-card-title">Cluster Node Recommendation</div>
+                        <div class="rec-card-subtitle">${nodeCount} nodes → ${requiredNodes} nodes (${podCount} pods)</div>
                     </div>
-                    <span class="rec-badge ${badgeClass}">${esc(action)}</span>
-                </div>
-                ${meaning ? `<div class="rec-meaning">${esc(meaning)}</div>` : ''}
-                <div class="data-grid">
-                    <div class="data-item">
-                        <span class="data-label">CPU Fragmentation</span>
-                        <span class="data-value">${fragmentation}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Node Efficiency</span>
-                        <span class="data-value">${formatPercent(rec.metrics?.node_efficiency)}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Pods on Node</span>
-                        <span class="data-value">${rec.metrics?.pods_on_node ?? '--'}</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">CPU Allocatable</span>
-                        <span class="data-value">${rec.metrics?.cpu_allocatable ?? '--'} cores</span>
-                    </div>
-                    <div class="data-item">
-                        <span class="data-label">Memory Allocatable</span>
-                        <span class="data-value">${memAllocatable}</span>
+                    <div class="badge-group">
+                        <span class="rec-badge ${badgeClass}">${esc(badgeText)}</span>
+                        <span class="confidence-badge ${confidenceClass}">${esc(confidence)}</span>
                     </div>
                 </div>
-                <div class="explanation">${esc(rec.explanation)}</div>
-                ${rec.limitation ? `<div class="limitation-text">${esc(rec.limitation)}</div>` : ''}
+                <div class="reason-section">
+                    <span class="reason-label">Reason:</span>
+                    <span class="reason-text">${esc(rec.reason || 'No reason provided')}</span>
+                </div>
+                ${rec.example ? `
+                <div class="example-section">
+                    <span class="example-label">Example:</span>
+                    <span class="example-text">${esc(rec.example)}</span>
+                </div>
+                ` : ''}
+                <div class="data-section">
+                    <div class="data-section-title">Efficiency Analysis</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">Node Efficiency</span>
+                            <span class="data-value">${efficiency} (${esc(efficiencyState.replace('_', ' '))})</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">CPU Pressure</span>
+                            <span class="data-value">${cpuPressure}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Memory Pressure</span>
+                            <span class="data-value">${memPressure}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Shape Imbalanced</span>
+                            <span class="data-value">${isImbalanced}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="data-section">
+                    <div class="data-section-title">Capacity</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">Node CPU</span>
+                            <span class="data-value">${nodeCpu} cores</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Node Memory</span>
+                            <span class="data-value">${nodeMem}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Total CPU Required</span>
+                            <span class="data-value">${totalCpuReq}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Total Memory Required</span>
+                            <span class="data-value">${totalMemReq}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="data-section">
+                    <div class="data-section-title">Consolidation</div>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="data-label">Current Nodes</span>
+                            <span class="data-value">${nodeCount}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Required Nodes</span>
+                            <span class="data-value">${requiredNodes}</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="data-label">Consolidation Possible</span>
+                            <span class="data-value">${rec.metrics?.consolidation_possible ? 'Yes' : 'No'}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -464,9 +560,10 @@ function renderHPAMisalignment() {
 
     let html = '';
     for (const rec of recs) {
-        const reasons = rec.reasons || [];
-        const reasonsHtml = reasons.length > 0 
-            ? `<ul class="reasons-list">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+        // Support both new format (advisory) and legacy (reasons)
+        const advisoryStatements = rec.advisory || rec.reasons || [];
+        const advisoryHtml = advisoryStatements.length > 0 
+            ? `<ul class="advisory-list">${advisoryStatements.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`
             : '';
 
         html += `
@@ -490,12 +587,15 @@ function renderHPAMisalignment() {
                         <span class="data-label">Current Replicas</span>
                         <span class="data-value">${rec.config?.current_replicas ?? '--'}</span>
                     </div>
+                    <div class="data-item">
+                        <span class="data-label">Matched Pods</span>
+                        <span class="data-value">${rec.metrics?.matched_pod_count ?? '--'}</span>
+                    </div>
                 </div>
-                <div style="margin-top: 12px;">
-                    <span class="data-label">Reasons</span>
-                    ${reasonsHtml}
+                <div class="advisory-section">
+                    <span class="data-label">Advisory</span>
+                    ${advisoryHtml}
                 </div>
-                ${rec.limitation ? `<div class="limitation-text">${esc(rec.limitation)}</div>` : ''}
             </div>
         `;
     }

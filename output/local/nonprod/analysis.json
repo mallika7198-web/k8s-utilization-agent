@@ -2,40 +2,9 @@
   "cluster": "local-kind",
   "env": "nonprod",
   "project": "local",
-  "generated_at": "2026-01-07T06:12:02.355448+00:00",
+  "generated_at": "2026-01-07T07:52:34.028804+00:00",
   "analysis_window": "7d",
   "recommendations": [
-    {
-      "type": "POD_RESIZE",
-      "namespace": "metrics-demo",
-      "pod": "web-b-9b6c874c7-8n65k",
-      "current": {
-        "cpu_request": 0.2,
-        "cpu_limit": 0.4,
-        "memory_request": 268435456.0,
-        "memory_limit": 536870912.0
-      },
-      "recommended": {
-        "cpu_request": 1.4403,
-        "cpu_limit": 2.1604,
-        "memory_request": 63371264,
-        "memory_limit": 95056896
-      },
-      "savings": {
-        "cpu_cores": -1.2403,
-        "memory_bytes": 205064192,
-        "memory_mb": 195.6
-      },
-      "usage_percentiles": {
-        "cpu_p95": 1.2002,
-        "cpu_p99": 1.2002,
-        "cpu_p100": 1.2003,
-        "memory_p95": 57274368,
-        "memory_p99": 57610240,
-        "memory_p100": 57610240
-      },
-      "explanation": "CPU request increase by 620.1% based on P99 usage (1.200 cores); Memory request decrease by 76.4% based on P99 usage (57.6MB); Safety factor: nonprod (1.10x)"
-    },
     {
       "type": "POD_RESIZE",
       "namespace": "metrics-demo",
@@ -49,13 +18,13 @@
       "recommended": {
         "cpu_request": 1.4402,
         "cpu_limit": 2.1603,
-        "memory_request": 68444569,
-        "memory_limit": 102666854
+        "memory_request": 263066746,
+        "memory_limit": 394600119
       },
       "savings": {
         "cpu_cores": -1.2402,
-        "memory_bytes": 199990887,
-        "memory_mb": 190.7
+        "memory_bytes": 5368710,
+        "memory_mb": 5.1
       },
       "usage_percentiles": {
         "cpu_p95": 1.2001,
@@ -65,38 +34,217 @@
         "memory_p99": 62222336,
         "memory_p100": 62222336
       },
-      "explanation": "CPU request increase by 620.1% based on P99 usage (1.200 cores); Memory request decrease by 74.5% based on P99 usage (62.2MB); Safety factor: nonprod (1.10x)"
+      "explanation": "CPU request increase by 620.1% based on P99 usage (1.200 cores); Memory request decrease by 2.0% based on P99 usage (62.2MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "metrics-demo",
+      "pod": "web-b-9b6c874c7-8n65k",
+      "current": {
+        "cpu_request": 0.2,
+        "cpu_limit": 0.4,
+        "memory_request": 268435456.0,
+        "memory_limit": 536870912.0
+      },
+      "recommended": {
+        "cpu_request": 1.4403,
+        "cpu_limit": 2.1605,
+        "memory_request": 263066746,
+        "memory_limit": 394600119
+      },
+      "savings": {
+        "cpu_cores": -1.2403,
+        "memory_bytes": 5368710,
+        "memory_mb": 5.1
+      },
+      "usage_percentiles": {
+        "cpu_p95": 1.2002,
+        "cpu_p99": 1.2003,
+        "cpu_p100": 1.2003,
+        "memory_p95": 57274368,
+        "memory_p99": 57610240,
+        "memory_p100": 57610240
+      },
+      "explanation": "CPU request increase by 620.2% based on P99 usage (1.200 cores); Memory request decrease by 2.0% based on P99 usage (57.6MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "NODE_RIGHTSIZE",
+      "direction": "down",
+      "reason": "Using more smaller nodes may improve packing efficiency.",
+      "example": "Replace 1 \u00d7 (11 CPU, 8 GB) nodes with 4 \u00d7 (6 CPU, 4 GB) nodes.",
+      "confidence": "medium",
+      "metrics": {
+        "current_node_count": 1,
+        "required_nodes": 2,
+        "required_nodes_cpu": 1,
+        "required_nodes_memory": 2,
+        "node_cpu_capacity": 11.0,
+        "node_memory_capacity": {
+          "bytes": 8217890816,
+          "gb": 7.7
+        },
+        "node_efficiency": 0.0,
+        "cpu_efficiency": 0.0,
+        "memory_efficiency": 0.0,
+        "efficiency_state": "strongly_oversized",
+        "cpu_pressure": 0.0,
+        "memory_pressure": 0.0,
+        "shape_imbalanced": false,
+        "imbalance_direction": "balanced",
+        "total_cpu_required": 3.77,
+        "total_memory_required": {
+          "bytes": 8681202635,
+          "gb": 8.1
+        },
+        "avg_pod_cpu": 0.2358,
+        "avg_pod_memory": {
+          "bytes": 542575164,
+          "mb": 517.4
+        },
+        "cpu_pods_per_node": 37.3,
+        "memory_pods_per_node": 12.1,
+        "consolidation_possible": false,
+        "pod_count": 16
+      }
+    },
+    {
+      "type": "HPA_MISALIGNMENT",
+      "namespace": "metrics-demo",
+      "hpa": "web-a-hpa",
+      "target": {
+        "target_name": "web-a",
+        "target_kind": "Deployment"
+      },
+      "config": {
+        "min_replicas": 1,
+        "max_replicas": 5,
+        "current_replicas": 1
+      },
+      "metrics": {
+        "avg_cpu_usage": 0.6001,
+        "avg_cpu_request": 0.0,
+        "avg_memory_p95": 55508992,
+        "avg_memory_request": 0,
+        "matched_pod_count": 1
+      },
+      "advisory": [
+        "Consider lowering the maximum replica count if peak scaling is rarely reached."
+      ],
+      "explanation": "Consider lowering the maximum replica count if peak scaling is rarely reached."
+    },
+    {
+      "type": "HPA_MISALIGNMENT",
+      "namespace": "metrics-demo",
+      "hpa": "api-a-hpa",
+      "target": {
+        "target_name": "api-a",
+        "target_kind": "Deployment"
+      },
+      "config": {
+        "min_replicas": 1,
+        "max_replicas": 10,
+        "current_replicas": 1
+      },
+      "metrics": {
+        "avg_cpu_usage": 0.8998,
+        "avg_cpu_request": 0.0,
+        "avg_memory_p95": 62140416,
+        "avg_memory_request": 0,
+        "matched_pod_count": 1
+      },
+      "advisory": [
+        "Consider lowering the maximum replica count if peak scaling is rarely reached."
+      ],
+      "explanation": "Consider lowering the maximum replica count if peak scaling is rarely reached."
+    },
+    {
+      "type": "HPA_MISALIGNMENT",
+      "namespace": "metrics-demo",
+      "hpa": "web-b-hpa",
+      "target": {
+        "target_name": "web-b",
+        "target_kind": "Deployment"
+      },
+      "config": {
+        "min_replicas": 2,
+        "max_replicas": 8,
+        "current_replicas": 2
+      },
+      "metrics": {
+        "avg_cpu_usage": 1.2001,
+        "avg_cpu_request": 0.2,
+        "avg_memory_p95": 59582464,
+        "avg_memory_request": 268435456,
+        "matched_pod_count": 2
+      },
+      "advisory": [
+        "Consider lowering the maximum replica count if peak scaling is rarely reached."
+      ],
+      "explanation": "Consider lowering the maximum replica count if peak scaling is rarely reached."
+    },
+    {
+      "type": "HPA_MISALIGNMENT",
+      "namespace": "metrics-demo",
+      "hpa": "worker-a-hpa",
+      "target": {
+        "target_name": "worker-a",
+        "target_kind": "Deployment"
+      },
+      "config": {
+        "min_replicas": 1,
+        "max_replicas": 15,
+        "current_replicas": 1
+      },
+      "metrics": {
+        "avg_cpu_usage": 1.5002,
+        "avg_cpu_request": 0.0,
+        "avg_memory_p95": 67309568,
+        "avg_memory_request": 0,
+        "matched_pod_count": 1
+      },
+      "advisory": [
+        "Consider lowering the maximum replica count if peak scaling is rarely reached."
+      ],
+      "explanation": "Consider lowering the maximum replica count if peak scaling is rarely reached."
     }
   ],
   "limitations": [
-    "CPU reductions do not yet account for node-level memory pressure. Manual review recommended before applying CPU reduction on memory-constrained nodes."
+    "CPU reductions do not yet account for node-level memory pressure. Manual review recommended before applying CPU reduction on memory-constrained nodes.",
+    "HPA analysis is heuristic and based on naming conventions.",
+    "HPA evaluation considers only CPU and memory metrics.",
+    "Custom or external metrics are not analyzed.",
+    "Validate HPA changes with application owners before applying.",
+    "Node recommendations are directional and heuristic.",
+    "Cloud provider instance availability and pricing are not considered.",
+    "Pod redistribution assumes normal Kubernetes scheduler behavior.",
+    "Validate node changes in non-production before applying."
   ],
   "summary": {
-    "total_recommendations": 2,
+    "total_recommendations": 7,
     "pods": {
       "affected": 2,
       "total": 9,
       "text": "2 out of 9 pods need resizing"
     },
     "nodes": {
-      "affected": 0,
+      "affected": 1,
       "total": 1,
-      "text": "0 out of 1 nodes show inefficiency"
+      "text": "Node recommendation available (cluster has 1 nodes)"
     },
     "hpa": {
-      "affected": 0,
+      "affected": 4,
       "total": 4,
-      "text": "0 out of 4 HPAs are misaligned"
+      "text": "4 out of 4 HPAs are misaligned"
     },
     "potential_savings": {
       "cpu_cores": -2.48,
-      "memory_bytes": 405055079,
-      "memory_mb": 386.3,
-      "memory_gb": 0.38,
-      "text": "Need 2.48 more CPU cores; Save 386MB memory"
+      "memory_bytes": 10737420,
+      "memory_mb": 10.2,
+      "memory_gb": 0.01,
+      "text": "Need 2.48 more CPU cores; Save 10MB memory"
     },
     "pod_resize_count": 2,
-    "node_rightsize_count": 0,
-    "hpa_misalignment_count": 0
+    "node_rightsize_count": 1,
+    "hpa_misalignment_count": 4
   }
 }

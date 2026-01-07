@@ -47,31 +47,60 @@ CPU_LIMIT_P100_MULTIPLIER = 1.25
 MEMORY_LIMIT_REQUEST_MULTIPLIER = 1.50
 MEMORY_LIMIT_P100_MULTIPLIER = 1.25
 
+# Memory bucket normalization with 2% buffer (to prevent tight node packing)
+# Buckets: 256Mi, 512Mi, 1Gi, 2Gi, 4Gi, 8Gi
+# Buffer: bucket × 0.98
+MEMORY_BUFFER_FACTOR = 0.98
+MEMORY_BUCKETS_BYTES = [
+    int(256 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),   # 251Mi
+    int(512 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),   # 502Mi
+    int(1024 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 1003Mi (1Gi)
+    int(2048 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 2007Mi (2Gi)
+    int(4096 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 4014Mi (4Gi)
+    int(8192 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 8028Mi (8Gi)
+]
+
 # Fragmentation/efficiency thresholds
 LOW_EFFICIENCY_THRESHOLD = 0.3
 HIGH_FRAGMENTATION_THRESHOLD = 0.5
 LOW_CPU_USAGE_RATIO = 0.2  # avg << request
 HIGH_MEMORY_PRESSURE_RATIO = 0.9  # memory_p95 ≈ request
 
-# Node recommendation actions (standardized)
-NODE_ACTIONS = {
-    "down": {
-        "action": "DOWNSIZE_NODE",
-        "meaning": "Node is underutilized and can be replaced with a smaller instance to reduce cost"
-    },
-    "right-size": {
-        "action": "RIGHT_SIZE_NODE",
-        "meaning": "Node has high fragmentation; consider rebalancing workloads or switching to a different instance type"
-    },
-    "consolidate": {
-        "action": "CONSOLIDATE_NODE",
-        "meaning": "Workloads can be moved to other nodes; this node may be removable"
-    },
-    "none": {
-        "action": "NO_ACTION",
-        "meaning": "Node is healthy and appropriately sized"
-    }
+# Node recommendation thresholds (new calculation-based approach)
+# Usable capacity per node (80% headroom for safe scheduling)
+NODE_USABLE_CAPACITY_FACTOR = 0.80
+# Node efficiency interpretation
+# < 0.40 → strongly oversized
+# 0.40 – 0.65 → moderately oversized
+# 0.65 – 0.85 → right-sized
+# > 0.85 → tight
+NODE_EFFICIENCY_STRONGLY_OVERSIZED = 0.40
+NODE_EFFICIENCY_MODERATELY_OVERSIZED = 0.65
+NODE_EFFICIENCY_RIGHT_SIZED = 0.85
+# Shape imbalance threshold: if abs(cpu_pressure - memory_pressure) > 0.25
+NODE_SHAPE_IMBALANCE_THRESHOLD = 0.25
+
+# Node recommendation directions (output: up | down | right-size)
+NODE_DIRECTIONS = {
+    "down": "Cluster can be consolidated to fewer or smaller nodes",
+    "up": "Nodes are running tight on resources",
+    "right-size": "Current node shape does not match workload profile"
 }
+
+# Allowed node recommendation statements (exact wording per spec)
+NODE_STATEMENTS = {
+    "consolidation": "Workloads can be consolidated onto fewer nodes after applying pod recommendations.",
+    "shape_imbalance": "Current node shape appears unbalanced for observed CPU and memory usage.",
+    "smaller_nodes": "Using more smaller nodes may improve packing efficiency.",
+}
+
+# Required node limitations (added to global limitations)
+NODE_LIMITATIONS = [
+    "Node recommendations are directional and heuristic.",
+    "Cloud provider instance availability and pricing are not considered.",
+    "Pod redistribution assumes normal Kubernetes scheduler behavior.",
+    "Validate node changes in non-production before applying.",
+]
 
 
 # =============================================================================
@@ -86,6 +115,21 @@ def load_config(config_path: str) -> Dict[str, Any]:
 def is_prod(env: str) -> bool:
     """Determine if environment is production"""
     return env.lower() == "prod"
+
+
+def normalize_memory_to_bucket(memory_bytes: float) -> int:
+    """
+    Round memory up to the next standard bucket with 2% buffer.
+    Buckets (with buffer): 251Mi, 502Mi, 1003Mi, 2007Mi, 4014Mi, 8028Mi
+    
+    Why: Standard shapes improve node packing efficiency.
+    2% buffer prevents tight scheduling that could cause OOM.
+    """
+    for bucket in MEMORY_BUCKETS_BYTES:
+        if memory_bytes <= bucket:
+            return bucket
+    # If larger than max bucket, return as-is (no normalization for huge pods)
+    return int(memory_bytes)
 
 
 # =============================================================================
@@ -374,6 +418,7 @@ def calculate_pod_resize(
     prod = is_prod(env)
     
     # CPU Request: max(cpu_p99 × 1.20, cpu_floor)
+    # Note: CPU is NOT normalized to buckets
     cpu_floor = CPU_FLOOR_PROD if prod else CPU_FLOOR_NONPROD
     cpu_request_new = max(cpu_p99 * CPU_REQUEST_MULTIPLIER, cpu_floor)
     
@@ -383,11 +428,13 @@ def calculate_pod_resize(
         (cpu_p100 or cpu_p99) * CPU_LIMIT_P100_MULTIPLIER
     )
     
-    # Memory Request: memory_p99 × safety_factor
+    # Memory Request: memory_p99 × safety_factor, then normalize to bucket
     safety_factor = SAFETY_FACTOR_PROD if prod else SAFETY_FACTOR_NONPROD
-    memory_request_new = memory_p99 * safety_factor
+    memory_request_raw = memory_p99 * safety_factor
+    memory_request_new = normalize_memory_to_bucket(memory_request_raw)
     
     # Memory Limit: max(memory_request_new × 1.50, memory_p100 × 1.25)
+    # Uses normalized memory request for consistency
     memory_limit_new = max(
         memory_request_new * MEMORY_LIMIT_REQUEST_MULTIPLIER,
         (memory_p100 or memory_p99) * MEMORY_LIMIT_P100_MULTIPLIER
@@ -505,170 +552,367 @@ def analyze_pod_resize(
 
 
 # =============================================================================
-# NODE_RIGHTSIZE Recommendations
+# NODE_RIGHTSIZE Recommendations (Calculation-Based)
 # =============================================================================
+
 def get_pods_on_node(node_name: str, pod_to_node: Dict[Tuple[str, str], str]) -> List[Tuple[str, str]]:
-    """Get list of (namespace, pod) tuples scheduled on a specific node
-    
-    This is CRITICAL for accurate node-scoped calculations.
-    Using cluster-wide pod totals would give incorrect fragmentation/efficiency.
-    """
+    """Get list of (namespace, pod) tuples scheduled on a specific node"""
     return [pod_key for pod_key, node in pod_to_node.items() if node == node_name]
 
 
-def calculate_node_rightsize(
-    node_name: str,
+def calculate_recommended_pod_values(
+    pod_key: Tuple[str, str],
+    pod_metrics: Dict[str, Any],
+    env: str
+) -> Tuple[float, int]:
+    """Calculate recommended CPU and memory values for a pod after POD_RESIZE
+    
+    Returns (cpu_request_new, memory_request_new) based on POD_RESIZE formulas.
+    These are the post-resize values used for node consolidation calculations.
+    """
+    cpu_p99 = pod_metrics["cpu_p99"].get(pod_key, 0) or 0
+    memory_p99 = pod_metrics["memory_p99"].get(pod_key, 0) or 0
+    
+    # CPU: max(cpu_p99 × 1.20, cpu_floor)
+    prod = is_prod(env)
+    cpu_floor = CPU_FLOOR_PROD if prod else CPU_FLOOR_NONPROD
+    cpu_request_new = max(cpu_p99 * CPU_REQUEST_MULTIPLIER, cpu_floor)
+    
+    # Memory: memory_p99 × safety_factor, then normalize to bucket
+    safety_factor = SAFETY_FACTOR_PROD if prod else SAFETY_FACTOR_NONPROD
+    memory_request_raw = memory_p99 * safety_factor
+    memory_request_new = normalize_memory_to_bucket(memory_request_raw)
+    
+    return cpu_request_new, memory_request_new
+
+
+def calculate_node_efficiency(
+    node_cpu_p95: float,
+    node_memory_p95: float,
+    node_cpu_capacity: float,
+    node_memory_capacity: float
+) -> Tuple[float, float, float]:
+    """Calculate node efficiency metrics
+    
+    Returns:
+        (cpu_efficiency, memory_efficiency, node_efficiency)
+        
+    Interpretation of node_efficiency:
+        < 0.40 → strongly oversized
+        0.40 – 0.65 → moderately oversized
+        0.65 – 0.85 → right-sized
+        > 0.85 → tight
+    """
+    cpu_efficiency = node_cpu_p95 / node_cpu_capacity if node_cpu_capacity > 0 else 0
+    memory_efficiency = node_memory_p95 / node_memory_capacity if node_memory_capacity > 0 else 0
+    node_efficiency = 0.5 * cpu_efficiency + 0.5 * memory_efficiency
+    return cpu_efficiency, memory_efficiency, node_efficiency
+
+
+def calculate_consolidation_feasibility(
+    total_cpu_required: float,
+    total_memory_required: float,
+    node_cpu_capacity: float,
+    node_memory_capacity: float,
+    current_node_count: int
+) -> Tuple[int, int, int, bool]:
+    """Determine whether node count can be reduced
+    
+    Returns:
+        (required_nodes_cpu, required_nodes_memory, required_nodes, consolidation_possible)
+    """
+    import math
+    
+    # Usable capacity per node (safe headroom)
+    usable_cpu_per_node = node_cpu_capacity * NODE_USABLE_CAPACITY_FACTOR
+    usable_memory_per_node = node_memory_capacity * NODE_USABLE_CAPACITY_FACTOR
+    
+    # Required node count
+    required_nodes_cpu = math.ceil(total_cpu_required / usable_cpu_per_node) if usable_cpu_per_node > 0 else current_node_count
+    required_nodes_memory = math.ceil(total_memory_required / usable_memory_per_node) if usable_memory_per_node > 0 else current_node_count
+    required_nodes = max(required_nodes_cpu, required_nodes_memory)
+    
+    # Consolidation rule
+    consolidation_possible = required_nodes < current_node_count
+    
+    return required_nodes_cpu, required_nodes_memory, required_nodes, consolidation_possible
+
+
+def calculate_shape_imbalance(
+    node_cpu_p95: float,
+    node_memory_p95: float,
+    node_cpu_capacity: float,
+    node_memory_capacity: float
+) -> Tuple[float, float, bool, str]:
+    """Detect CPU-heavy or memory-heavy node shapes
+    
+    Returns:
+        (cpu_pressure, memory_pressure, is_imbalanced, imbalance_direction)
+        imbalance_direction: 'cpu-heavy' | 'memory-heavy' | 'balanced'
+    """
+    cpu_pressure = node_cpu_p95 / node_cpu_capacity if node_cpu_capacity > 0 else 0
+    memory_pressure = node_memory_p95 / node_memory_capacity if node_memory_capacity > 0 else 0
+    
+    pressure_diff = abs(cpu_pressure - memory_pressure)
+    is_imbalanced = pressure_diff > NODE_SHAPE_IMBALANCE_THRESHOLD
+    
+    if not is_imbalanced:
+        imbalance_direction = "balanced"
+    elif cpu_pressure > memory_pressure:
+        imbalance_direction = "cpu-heavy"  # Suggest less memory per CPU
+    else:
+        imbalance_direction = "memory-heavy"  # Suggest more memory per CPU
+    
+    return cpu_pressure, memory_pressure, is_imbalanced, imbalance_direction
+
+
+def calculate_smaller_node_strategy(
+    avg_pod_cpu: float,
+    avg_pod_memory: float,
+    usable_cpu_per_node: float,
+    usable_memory_per_node: float,
+    node_efficiency: float
+) -> Tuple[float, float, bool]:
+    """Determine whether smaller nodes would pack workloads better
+    
+    Returns:
+        (cpu_pods_per_node, memory_pods_per_node, recommend_smaller_nodes)
+    """
+    cpu_pods_per_node = usable_cpu_per_node / avg_pod_cpu if avg_pod_cpu > 0 else 0
+    memory_pods_per_node = usable_memory_per_node / avg_pod_memory if avg_pod_memory > 0 else 0
+    
+    # Recommend smaller nodes if ALL are true:
+    # - node_efficiency < 0.65
+    # - avg pod size is small relative to node capacity (high packing density possible)
+    # High packing density = can fit many pods per node
+    recommend_smaller_nodes = (
+        node_efficiency < NODE_EFFICIENCY_MODERATELY_OVERSIZED and
+        cpu_pods_per_node > 10 and  # Can fit many pods
+        memory_pods_per_node > 10
+    )
+    
+    return cpu_pods_per_node, memory_pods_per_node, recommend_smaller_nodes
+
+
+def generate_cluster_node_recommendation(
     node_metrics: Dict[str, Any],
-    pod_metrics: Dict[str, Any]
+    pod_metrics: Dict[str, Any],
+    pod_resize_recs: List[Dict[str, Any]],
+    env: str
 ) -> Optional[Dict[str, Any]]:
-    """Calculate NODE_RIGHTSIZE recommendation for a single node
+    """Generate cluster-level NODE_RIGHTSIZE recommendation based on calculations
     
-    IMPORTANT: All pod aggregations are NODE-SCOPED using pod_to_node mapping.
-    This fixes the previous bug where cluster-wide totals were incorrectly used.
-    
-    Formulas (node-scoped):
-    - cpu_fragmentation = 1 - (Σ pod_cpu_p95_on_node / Σ pod_cpu_request_on_node)
-    - node_efficiency = 0.5 × (Σ pod_cpu_p95_on_node / node_cpu_capacity)
-                      + 0.5 × (node_memory_usage / node_memory_capacity)
+    Node recommendations are based on post pod-resize values.
+    Output: direction (up | down | right-size), reason, example, confidence
     """
     
-    # Get node capacity
-    cpu_allocatable = node_metrics["cpu_allocatable"].get((node_name,))
-    memory_allocatable = node_metrics["memory_allocatable"].get((node_name,))
-    
-    if not cpu_allocatable or not memory_allocatable:
+    # Get all nodes
+    nodes = list(node_metrics["cpu_allocatable"].keys())
+    if not nodes:
         return None
     
-    # Get current node memory usage (not percentile - avoids invalid PromQL)
-    node_memory_usage = node_metrics["memory_usage"].get((node_name,), 0)
+    current_node_count = len(nodes)
+    if current_node_count == 0:
+        return None
     
-    # Get pod-to-node mapping
+    # Use first node's capacity as reference (assumes homogeneous cluster)
+    # In heterogeneous clusters, this is a simplification
+    first_node = nodes[0][0]
+    node_cpu_capacity = node_metrics["cpu_allocatable"].get((first_node,), 0)
+    node_memory_capacity = node_metrics["memory_allocatable"].get((first_node,), 0)
+    
+    if not node_cpu_capacity or not node_memory_capacity:
+        return None
+    
     pod_to_node = pod_metrics.get("pod_to_node", {})
+    all_pods = list(pod_to_node.keys())
     
-    # Find all pods scheduled on THIS node
-    # This is the CRITICAL fix - we must scope to this node only
-    pods_on_node = get_pods_on_node(node_name, pod_to_node)
-    
-    if not pods_on_node:
-        # No pods on node - cannot calculate fragmentation
+    if not all_pods:
         return None
     
-    # Calculate NODE-SCOPED pod totals (NOT cluster-wide)
-    # Sum only requests and usage for pods actually on this node
-    total_pod_cpu_request_on_node = sum(
-        pod_metrics["cpu_requests"].get(pod_key, 0)
-        for pod_key in pods_on_node
+    # Calculate post-resize values for all pods
+    # Build a map of pod -> recommended values
+    pod_recommended = {}
+    for pod_key in all_pods:
+        # Check if there's a POD_RESIZE recommendation for this pod
+        rec_match = None
+        for rec in pod_resize_recs:
+            if (rec["namespace"], rec["pod"]) == pod_key:
+                rec_match = rec
+                break
+        
+        if rec_match:
+            # Use values from POD_RESIZE recommendation
+            cpu_new = rec_match["recommended"]["cpu_request"]
+            mem_new = rec_match["recommended"]["memory_request"]
+        else:
+            # Calculate what the recommended values would be
+            cpu_new, mem_new = calculate_recommended_pod_values(pod_key, pod_metrics, env)
+        
+        pod_recommended[pod_key] = (cpu_new, mem_new)
+    
+    # Step 1: Total required capacity (after POD_RESIZE)
+    total_cpu_required = sum(v[0] for v in pod_recommended.values())
+    total_memory_required = sum(v[1] for v in pod_recommended.values())
+    
+    # Step 2: Calculate cluster-wide node metrics
+    # Sum node usage across all nodes
+    total_node_cpu_p95 = sum(
+        node_metrics["cpu_usage"].get((n,), 0) for (n,) in nodes
     )
-    total_pod_cpu_p95_on_node = sum(
-        pod_metrics["cpu_p95"].get(pod_key, 0) or 0
-        for pod_key in pods_on_node
+    total_node_memory_p95 = sum(
+        node_metrics["memory_usage"].get((n,), 0) for (n,) in nodes
     )
-    total_pod_memory_request_on_node = sum(
-        pod_metrics["memory_requests"].get(pod_key, 0)
-        for pod_key in pods_on_node
+    total_node_cpu_capacity = sum(
+        node_metrics["cpu_allocatable"].get((n,), 0) for (n,) in nodes
+    )
+    total_node_memory_capacity = sum(
+        node_metrics["memory_allocatable"].get((n,), 0) for (n,) in nodes
     )
     
-    # CPU Fragmentation (node-scoped): 1 - (Σ pod_cpu_p95_on_node / Σ pod_cpu_request_on_node)
-    # High fragmentation = requests much higher than actual usage
-    cpu_fragmentation = 0
-    cpu_fragmentation_undefined = False
-    if total_pod_cpu_request_on_node > 0:
-        cpu_fragmentation = 1 - (total_pod_cpu_p95_on_node / total_pod_cpu_request_on_node)
-        cpu_fragmentation = max(0, min(1, cpu_fragmentation))
+    # Calculate efficiency (cluster-wide average per node)
+    avg_node_cpu_p95 = total_node_cpu_p95 / current_node_count
+    avg_node_memory_p95 = total_node_memory_p95 / current_node_count
+    
+    cpu_efficiency, memory_efficiency, node_efficiency = calculate_node_efficiency(
+        avg_node_cpu_p95, avg_node_memory_p95,
+        node_cpu_capacity, node_memory_capacity
+    )
+    
+    # Step 3: Consolidation feasibility
+    req_nodes_cpu, req_nodes_memory, required_nodes, consolidation_possible = calculate_consolidation_feasibility(
+        total_cpu_required, total_memory_required,
+        node_cpu_capacity, node_memory_capacity,
+        current_node_count
+    )
+    
+    # Step 4: Shape imbalance
+    cpu_pressure, memory_pressure, is_imbalanced, imbalance_direction = calculate_shape_imbalance(
+        avg_node_cpu_p95, avg_node_memory_p95,
+        node_cpu_capacity, node_memory_capacity
+    )
+    
+    # Step 5: Smaller node strategy
+    avg_pod_cpu = total_cpu_required / len(all_pods) if all_pods else 0
+    avg_pod_memory = total_memory_required / len(all_pods) if all_pods else 0
+    usable_cpu_per_node = node_cpu_capacity * NODE_USABLE_CAPACITY_FACTOR
+    usable_memory_per_node = node_memory_capacity * NODE_USABLE_CAPACITY_FACTOR
+    
+    cpu_pods_per_node, memory_pods_per_node, recommend_smaller_nodes = calculate_smaller_node_strategy(
+        avg_pod_cpu, avg_pod_memory,
+        usable_cpu_per_node, usable_memory_per_node,
+        node_efficiency
+    )
+    
+    # Determine direction, reason, confidence
+    direction = None
+    reasons = []
+    confidence = "low"
+    example = ""
+    
+    # Efficiency interpretation
+    efficiency_state = ""
+    if node_efficiency < NODE_EFFICIENCY_STRONGLY_OVERSIZED:
+        efficiency_state = "strongly_oversized"
+    elif node_efficiency < NODE_EFFICIENCY_MODERATELY_OVERSIZED:
+        efficiency_state = "moderately_oversized"
+    elif node_efficiency < NODE_EFFICIENCY_RIGHT_SIZED:
+        efficiency_state = "right_sized"
     else:
-        # Edge case: no CPU requests on node (daemon-only or empty node)
-        cpu_fragmentation_undefined = True
+        efficiency_state = "tight"
     
-    # Free Memory (node-scoped)
-    free_memory = memory_allocatable - total_pod_memory_request_on_node
-    
-    # Node Efficiency (node-scoped):
-    # 0.5 × (Σ pod_cpu_p95_on_node / node_cpu_capacity) + 0.5 × (node_memory_usage / node_memory_capacity)
-    # Uses current memory usage (not percentile) to avoid invalid PromQL
-    cpu_efficiency = total_pod_cpu_p95_on_node / cpu_allocatable if cpu_allocatable > 0 else 0
-    memory_efficiency = node_memory_usage / memory_allocatable if memory_allocatable > 0 else 0
-    node_efficiency = 0.5 * cpu_efficiency + 0.5 * memory_efficiency
-    
-    # Decision: IF node_efficiency is low AND fragmentation is high → NODE_RIGHTSIZE
-    if node_efficiency >= LOW_EFFICIENCY_THRESHOLD or cpu_fragmentation <= HIGH_FRAGMENTATION_THRESHOLD:
-        return None
-    
-    # Determine direction
-    if node_efficiency < 0.2:
+    # Decision logic
+    if efficiency_state == "tight":
+        direction = "up"
+        reasons.append(f"Nodes are running at {node_efficiency:.0%} efficiency (tight)")
+        confidence = "medium"
+        example = f"Consider adding nodes or using larger instance sizes"
+    elif consolidation_possible and (efficiency_state in ["strongly_oversized", "moderately_oversized"]):
         direction = "down"
-    elif cpu_fragmentation > 0.7:
+        reasons.append(NODE_STATEMENTS["consolidation"])
+        nodes_saved = current_node_count - required_nodes
+        confidence = "high" if nodes_saved >= 2 else "medium"
+        example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {required_nodes} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes."
+    elif is_imbalanced:
         direction = "right-size"
-    else:
+        reasons.append(NODE_STATEMENTS["shape_imbalance"])
+        confidence = "medium"
+        if imbalance_direction == "cpu-heavy":
+            example = f"Consider node types with less memory relative to CPU (current shape uses {memory_pressure:.0%} memory vs {cpu_pressure:.0%} CPU)"
+        else:
+            example = f"Consider node types with more memory relative to CPU (current shape uses {memory_pressure:.0%} memory vs {cpu_pressure:.0%} CPU)"
+    elif recommend_smaller_nodes and efficiency_state in ["strongly_oversized", "moderately_oversized"]:
         direction = "down"
+        reasons.append(NODE_STATEMENTS["smaller_nodes"])
+        confidence = "medium"
+        smaller_cpu = node_cpu_capacity / 2
+        smaller_mem = node_memory_capacity / 2
+        new_count = required_nodes * 2
+        example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {new_count} × ({smaller_cpu:.0f} CPU, {smaller_mem / (1024**3):.0f} GB) nodes."
     
-    # Get standardized recommendation with action and meaning
-    recommendation_info = NODE_ACTIONS.get(direction, NODE_ACTIONS["none"])
+    # No recommendation if already right-sized
+    if not direction:
+        return None
     
-    result = {
+    return {
         "type": "NODE_RIGHTSIZE",
-        "node": node_name,
-        "direction": direction,  # Keep for backward compatibility
-        "recommendation": {
-            "action": recommendation_info["action"],
-            "meaning": recommendation_info["meaning"]
-        },
+        "direction": direction,
+        "reason": " ".join(reasons),
+        "example": example,
+        "confidence": confidence,
         "metrics": {
-            "cpu_allocatable": round(cpu_allocatable, 2),
-            "memory_allocatable": {
-                "bytes": int(memory_allocatable),
-                "gb": round(memory_allocatable / (1024 ** 3), 1)
-            },
-            "cpu_fragmentation": round(cpu_fragmentation, 3) if not cpu_fragmentation_undefined else None,
-            "cpu_fragmentation_undefined": cpu_fragmentation_undefined,
-            "free_memory": {
-                "bytes": int(free_memory),
-                "gb": round(free_memory / (1024 ** 3), 1)
+            "current_node_count": current_node_count,
+            "required_nodes": required_nodes,
+            "required_nodes_cpu": req_nodes_cpu,
+            "required_nodes_memory": req_nodes_memory,
+            "node_cpu_capacity": round(node_cpu_capacity, 2),
+            "node_memory_capacity": {
+                "bytes": int(node_memory_capacity),
+                "gb": round(node_memory_capacity / (1024 ** 3), 1)
             },
             "node_efficiency": round(node_efficiency, 3),
-            "pods_on_node": len(pods_on_node),
-            "total_pod_cpu_request_on_node": round(total_pod_cpu_request_on_node, 4),
-            "total_pod_cpu_p95_on_node": round(total_pod_cpu_p95_on_node, 4),
+            "cpu_efficiency": round(cpu_efficiency, 3),
+            "memory_efficiency": round(memory_efficiency, 3),
+            "efficiency_state": efficiency_state,
+            "cpu_pressure": round(cpu_pressure, 3),
+            "memory_pressure": round(memory_pressure, 3),
+            "shape_imbalanced": is_imbalanced,
+            "imbalance_direction": imbalance_direction,
+            "total_cpu_required": round(total_cpu_required, 2),
+            "total_memory_required": {
+                "bytes": int(total_memory_required),
+                "gb": round(total_memory_required / (1024 ** 3), 1)
+            },
+            "avg_pod_cpu": round(avg_pod_cpu, 4),
+            "avg_pod_memory": {
+                "bytes": int(avg_pod_memory),
+                "mb": round(avg_pod_memory / (1024 * 1024), 1)
+            },
+            "cpu_pods_per_node": round(cpu_pods_per_node, 1),
+            "memory_pods_per_node": round(memory_pods_per_node, 1),
+            "consolidation_possible": consolidation_possible,
+            "pod_count": len(all_pods),
         },
-        "explanation": build_node_rightsize_explanation(
-            node_name, direction, cpu_fragmentation, node_efficiency, len(pods_on_node)
-        ),
     }
-    
-    # Add limitation if CPU fragmentation is undefined
-    if cpu_fragmentation_undefined:
-        result["limitation"] = f"CPU fragmentation undefined on node {node_name} (no CPU requests)"
-    
-    return result
-
-
-def build_node_rightsize_explanation(
-    node_name: str,
-    direction: str,
-    fragmentation: float,
-    efficiency: float,
-    pod_count: int
-) -> str:
-    """Build explanation for NODE_RIGHTSIZE recommendation"""
-    return (
-        f"Node {node_name} has low efficiency ({efficiency:.1%}) "
-        f"and high CPU fragmentation ({fragmentation:.1%}) "
-        f"across {pod_count} pods. "
-        f"Recommendation: {direction}. "
-        f"Consider consolidating workloads or resizing the node."
-    )
 
 
 def analyze_node_rightsize(
     node_metrics: Dict[str, Any],
-    pod_metrics: Dict[str, Any]
+    pod_metrics: Dict[str, Any],
+    pod_resize_recs: List[Dict[str, Any]],
+    env: str
 ) -> List[Dict[str, Any]]:
-    """Generate all NODE_RIGHTSIZE recommendations"""
+    """Generate NODE_RIGHTSIZE recommendations
+    
+    Returns a single cluster-level recommendation based on calculations.
+    """
     recommendations = []
     
-    for (node_name,) in node_metrics["cpu_allocatable"].keys():
-        rec = calculate_node_rightsize(node_name, node_metrics, pod_metrics)
-        if rec:
-            recommendations.append(rec)
+    rec = generate_cluster_node_recommendation(
+        node_metrics, pod_metrics, pod_resize_recs, env
+    )
+    if rec:
+        recommendations.append(rec)
     
     return recommendations
 
@@ -677,11 +921,21 @@ def analyze_node_rightsize(
 # HPA_MISALIGNMENT Detection
 # =============================================================================
 
-# Limitation: HPA to pod matching is heuristic
-HPA_POD_MATCHING_LIMITATION = (
-    "HPA to pod mapping is heuristic and depends on naming conventions. "
-    "Pods are matched if the HPA target name is a substring of the pod name."
-)
+# Standard advisory statements (use exact wording per spec)
+HPA_STATEMENTS = {
+    "min_replicas": "Consider reducing the minimum replica count if sustained usage remains low.",
+    "max_replicas": "Consider lowering the maximum replica count if peak scaling is rarely reached.",
+    "cpu_based": "HPA may be scaling based on CPU requests that are higher than actual usage.",
+    "memory_bound": "Workload appears memory-bound, but HPA is configured to scale on CPU.",
+}
+
+# Required limitations (added to global limitations, not per-HPA)
+HPA_LIMITATIONS = [
+    "HPA analysis is heuristic and based on naming conventions.",
+    "HPA evaluation considers only CPU and memory metrics.",
+    "Custom or external metrics are not analyzed.",
+    "Validate HPA changes with application owners before applying.",
+]
 
 
 def detect_hpa_misalignment(
@@ -691,9 +945,8 @@ def detect_hpa_misalignment(
 ) -> List[Dict[str, Any]]:
     """Detect HPA misalignment issues
     
-    LIMITATION: HPA target is matched to pods using name substring matching.
-    This is a heuristic that depends on standard Kubernetes naming conventions
-    (e.g., deployment 'myapp' creates pods 'myapp-xyz-abc').
+    Uses heuristic pod matching (HPA target name as substring of pod name).
+    Generates advisory recommendations only - no automatic changes.
     """
     recommendations = []
     
@@ -721,13 +974,13 @@ def detect_hpa_misalignment(
         
         target_name = target_info.get("target_name", "")
         
-        # Find pods matching this HPA's target
-        # NOTE: This is heuristic substring matching - see HPA_POD_MATCHING_LIMITATION
+        # Find pods matching this HPA's target (heuristic: target_name is substring of pod_name)
         matching_pods = [
             k for k in pod_metrics["cpu_p95"].keys()
             if k[0] == ns and target_name and target_name in k[1]
         ]
         
+        # Skip if no pods match - do not generate recommendations
         if not matching_pods:
             continue
         
@@ -748,23 +1001,19 @@ def detect_hpa_misalignment(
             pod_metrics["memory_requests"].get(p, 0) for p in matching_pods
         ) / len(matching_pods)
         
-        misalignment_reasons = []
+        # Collect advisory statements (not reasons)
+        advisory_statements = []
         
-        # Rule 1: CPU-based HPA with low CPU usage (avg_cpu_usage << cpu_request)
+        # Rule 1: CPU-based HPA with low CPU usage
         if avg_cpu_request > 0 and avg_cpu_usage / avg_cpu_request < LOW_CPU_USAGE_RATIO:
-            misalignment_reasons.append(
-                f"CPU-based HPA with low CPU usage ({avg_cpu_usage:.3f} cores vs {avg_cpu_request:.3f} request)"
-            )
+            advisory_statements.append(HPA_STATEMENTS["cpu_based"])
         
         # Rule 2: Memory-bound workload with CPU HPA
         if avg_memory_request > 0 and avg_cpu_request > 0:
             memory_ratio = avg_memory_p95 / avg_memory_request if avg_memory_request > 0 else 0
             cpu_ratio = avg_cpu_usage / avg_cpu_request if avg_cpu_request > 0 else 0
             if memory_ratio > HIGH_MEMORY_PRESSURE_RATIO and cpu_ratio < LOW_CPU_USAGE_RATIO:
-                misalignment_reasons.append(
-                    f"Memory-bound workload (memory {memory_ratio:.1%} of request) "
-                    f"but HPA scales on CPU ({cpu_ratio:.1%} of request)"
-                )
+                advisory_statements.append(HPA_STATEMENTS["memory_bound"])
         
         # Rule 3: minReplicas blocking consolidation
         if min_replicas > 2 and current_replicas == min_replicas:
@@ -772,12 +1021,13 @@ def detect_hpa_misalignment(
             if avg_cpu_request > 0:
                 avg_utilization = avg_cpu_usage / avg_cpu_request
             if avg_utilization < 0.3:  # Low utilization
-                misalignment_reasons.append(
-                    f"High minReplicas ({int(min_replicas)}) blocking consolidation "
-                    f"with low utilization ({avg_utilization:.1%})"
-                )
+                advisory_statements.append(HPA_STATEMENTS["min_replicas"])
         
-        if misalignment_reasons:
+        # Rule 4: maxReplicas rarely reached (if current is always at min)
+        if current_replicas == min_replicas and max_replicas > min_replicas * 2:
+            advisory_statements.append(HPA_STATEMENTS["max_replicas"])
+        
+        if advisory_statements:
             recommendations.append({
                 "type": "HPA_MISALIGNMENT",
                 "namespace": ns,
@@ -795,9 +1045,8 @@ def detect_hpa_misalignment(
                     "avg_memory_request": int(avg_memory_request),
                     "matched_pod_count": len(matching_pods),
                 },
-                "reasons": misalignment_reasons,
-                "explanation": "; ".join(misalignment_reasons),
-                "limitation": HPA_POD_MATCHING_LIMITATION,
+                "advisory": advisory_statements,
+                "explanation": " ".join(advisory_statements),
             })
     
     return recommendations
@@ -843,10 +1092,13 @@ def generate_output(
     if any(r["type"] == "POD_RESIZE" for r in recommendations):
         all_limitations.append(MEMORY_PRESSURE_LIMITATION)
     
-    # Check for undefined CPU fragmentation in NODE_RIGHTSIZE
-    for rec in recommendations:
-        if rec["type"] == "NODE_RIGHTSIZE" and rec.get("limitation"):
-            all_limitations.append(rec["limitation"])
+    # Add HPA limitations if any HPA recommendations exist
+    if any(r["type"] == "HPA_MISALIGNMENT" for r in recommendations):
+        all_limitations.extend(HPA_LIMITATIONS)
+    
+    # Add node limitations if any NODE_RIGHTSIZE recommendations exist
+    if any(r["type"] == "NODE_RIGHTSIZE" for r in recommendations):
+        all_limitations.extend(NODE_LIMITATIONS)
     
     # Calculate affected counts
     pod_resize_recs = [r for r in recommendations if r["type"] == "POD_RESIZE"]
@@ -901,7 +1153,7 @@ def generate_output(
             "nodes": {
                 "affected": node_rightsize_count,
                 "total": total_nodes,
-                "text": f"{node_rightsize_count} out of {total_nodes} nodes show inefficiency" if total_nodes > 0 else "No nodes scanned"
+                "text": f"Node recommendation available (cluster has {total_nodes} nodes)" if node_rightsize_count > 0 else f"No node changes needed ({total_nodes} nodes scanned)"
             },
             "hpa": {
                 "affected": hpa_misalignment_count,
@@ -1002,8 +1254,8 @@ def analyze_cluster(
     recommendations.extend(pod_resize_recs)
     logger.info(f"Generated {len(pod_resize_recs)} POD_RESIZE recommendations")
     
-    # NODE_RIGHTSIZE
-    node_rightsize_recs = analyze_node_rightsize(node_metrics, pod_metrics)
+    # NODE_RIGHTSIZE (uses post-resize pod values)
+    node_rightsize_recs = analyze_node_rightsize(node_metrics, pod_metrics, pod_resize_recs, env)
     recommendations.extend(node_rightsize_recs)
     logger.info(f"Generated {len(node_rightsize_recs)} NODE_RIGHTSIZE recommendations")
     

@@ -205,3 +205,200 @@ Static HTML/JS/CSS viewer in `viewer/` directory:
 - Shows summary cards with counts and potential savings
 - Per-pod recommendations with impact display (↑↓ arrows)
 - Color coding: green = savings, red = needs more resources
+
+## Common 
+ - move common configurable constanst to config.yaml
+
+
+Pod Shape Normalization (Memory only)
+
+Apply shape normalization to memory requests only
+
+Do NOT normalize CPU requests
+
+Use fixed memory buckets with 2% buffer (to prevent tight node packing):
+
+| Bucket | With 2% Buffer |
+|--------|---------------|
+| 256Mi  | 251Mi         |
+| 512Mi  | 502Mi         |
+| 1Gi    | 1003Mi        |
+| 2Gi    | 2007Mi        |
+| 4Gi    | 4014Mi        |
+| 8Gi    | 8028Mi        |
+
+If the recommended memory request is not exactly one of the buckets:
+
+Round up to the next bucket
+
+Never round down
+
+Normalization rule
+
+```
+bucket_with_buffer = bucket × 0.98
+normalized_memory_request = next_bucket_with_buffer >= memory_request_new
+```
+
+Example:
+
+780Mi → 1003Mi (1Gi bucket with 2% buffer)
+
+1300Mi → 2007Mi (2Gi bucket with 2% buffer)
+
+IMPORTANT
+
+Apply shape normalization after usage-based memory calculation
+
+Use normalized value for:
+
+Final recommendation
+
+Fragmentation math
+
+Savings calculation
+
+Memory & CPU Limits (Include in Recommendation)
+
+For every pod, compute and expose:
+
+CPU limit
+
+cpu_limit_new =
+max(
+  cpu_request_new × 1.50,
+  cpu_p100 × 1.25
+)
+
+
+Memory limit
+
+memory_limit_new =
+max(
+  normalized_memory_request × 1.50,
+  memory_p100 × 1.25
+)
+
+UI / Output Requirements (MANDATORY)
+
+For each pod recommendation, include both current and recommended values:
+
+current:
+  cpu_request
+  cpu_limit
+  memory_request
+  memory_limit
+
+recommended:
+  cpu_request
+  cpu_limit
+  memory_request
+  memory_limit
+
+
+UI expectation
+
+Always show:
+
+Current request vs recommended request
+
+Current limit vs recommended limit
+
+Clearly label normalized memory requests
+
+Example UI text:
+
+“Memory request normalized from 780Mi → 1Gi for better node packing.”
+
+Do NOT
+
+Normalize CPU requests
+
+Compute savings from limits
+
+Hide current limits in output
+
+Limits are shown for visibility only, not savings.
+
+
+
+HPA Recommendation Output Rules
+
+HPA recommendations are heuristic and advisory
+
+Do NOT attempt exact ownership resolution
+
+Use simple, direct statements
+
+Avoid technical explanations in UI text
+
+HPA Recommendation Statements (USE EXACT WORDING)
+
+When conditions are met, generate one or more of the following statements:
+
+Min replicas
+
+“Consider reducing the minimum replica count if sustained usage remains low.”
+
+Max replicas
+
+“Consider lowering the maximum replica count if peak scaling is rarely reached.”
+
+CPU-based HPA
+
+“HPA may be scaling based on CPU requests that are higher than actual usage.”
+
+Memory-bound workload
+
+“Workload appears memory-bound, but HPA is configured to scale on CPU.”
+
+Consumer workload
+
+“If this workload consumes from a topic or queue, ensure replica count aligns with the partition count.”
+
+HPA Mapping Rule
+
+Map HPA to pods heuristically
+
+A pod is considered associated with an HPA if:
+
+hpa_target_name is a substring of pod_name
+
+
+If no pods match, do not generate HPA recommendations
+
+Limitations (ALWAYS INCLUDE)
+
+Add the following limitations text verbatim in output:
+
+Limitations
+
+HPA analysis is heuristic and based on naming conventions.
+
+HPA evaluation considers only CPU and memory metrics.
+
+Custom or external metrics are not analyzed.
+
+For consumer workloads, scaling recommendations do not account for topic or queue partition counts.
+
+Validate HPA changes with application owners before applying.
+
+Output Rules
+
+HPA recommendations must:
+
+Use soft language (“may”, “consider”)
+
+Avoid definitive instructions
+
+Be advisory only
+
+Do NOT:
+
+Recommend automatic HPA changes
+
+Suggest disabling HPA
+
+Infer behavior from custom metrics
+
+Generate code and output text that follows these rules exactly.

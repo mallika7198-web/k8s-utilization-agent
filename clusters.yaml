@@ -1,34 +1,13 @@
 # Kubernetes Capacity Analysis Tool - Configuration
-# Each cluster is analyzed independently
+# env: "prod" = production safety factors, anything else = nonprod
 
 clusters:
+  # Local testing cluster
   local-kind:
-    env: local
+    env: nonprod
     project: local
     prom_url: http://localhost:9090
     owner_email:
       - dev@localhost
-    # Namespaces to exclude from analysis (optional)
     exclude_namespaces:
       - kube-system
-      - kube-public
-      - kube-node-lease
-
-#  stage-project1:
-#    env: stage
-#    project: project1
-#    prom_url: http://prometheus.stage.example
-#    owner_email:
-#      - email1@example.com
-#    exclude_namespaces:
-#      - kube-system
-
-#  prod-project2:
-#    env: prod
-#    project: project2
-#    prom_url: http://prometheus.prod.example
-#    owner_email:
-#      - owner@example.com
-#    exclude_namespaces:
-#      - kube-system
-#      - monitoring

@@ -250,6 +250,21 @@ main {
     font-style: italic;
 }
 
+/* Data Sections */
+.data-section {
+    margin-bottom: 16px;
+}
+
+.data-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e9ecef;
+}
+
 /* Data Grid */
 .data-grid {
     display: grid;
@@ -285,7 +300,7 @@ main {
     color: #555;
 }
 
-/* Reasons List */
+/* Reasons List (legacy) */
 .reasons-list {
     list-style: disc;
     padding-left: 20px;
@@ -295,6 +310,45 @@ main {
 .reasons-list li {
     margin-bottom: 4px;
     font-size: 13px;
+}
+
+/* Advisory Section (HPA) */
+.advisory-section {
+    margin-top: 12px;
+}
+
+.advisory-list {
+    list-style: none;
+    padding-left: 0;
+    margin-top: 8px;
+}
+
+.advisory-list li {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: #e7f3ff;
+    border-left: 3px solid #007bff;
+    font-size: 13px;
+    color: #004085;
+}
+
+/* HPA Limitations */
+.hpa-limitations {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e9ecef;
+}
+
+.limitations-list {
+    list-style: disc;
+    padding-left: 20px;
+    margin-top: 8px;
+}
+
+.limitations-list li {
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #856404;
 }
 
 /* Limitation Items */
@@ -406,6 +460,108 @@ tr:hover {
 .savings-negative {
     color: #dc3545;
     font-weight: 600;
+}
+
+/* Node Recommendation Card - Cluster Level */
+.node-rec-card {
+    border-left: 4px solid #6c757d;
+}
+
+.node-rec-card .rec-card-header {
+    justify-content: space-between;
+}
+
+.badge-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Direction Badges */
+.rec-badge.up {
+    background: #dc3545;
+    color: #fff;
+}
+
+.rec-badge.down {
+    background: #28a745;
+    color: #fff;
+}
+
+.rec-badge.right-size {
+    background: #ffc107;
+    color: #212529;
+}
+
+/* Confidence Badges */
+.confidence-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.confidence-high {
+    background: #28a745;
+    color: #fff;
+}
+
+.confidence-medium {
+    background: #ffc107;
+    color: #212529;
+}
+
+.confidence-low {
+    background: #6c757d;
+    color: #fff;
+}
+
+/* Reason Section */
+.reason-section {
+    background: #e7f3ff;
+    border-left: 3px solid #007bff;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 0 4px 4px 0;
+}
+
+.reason-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #004085;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.reason-text {
+    font-size: 13px;
+    color: #004085;
+}
+
+/* Example Section */
+.example-section {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.example-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #495057;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.example-text {
+    font-size: 12px;
+    color: #495057;
 }
 
 /* Responsive */
