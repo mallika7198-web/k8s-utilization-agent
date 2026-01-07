@@ -2,24 +2,23 @@
 # Each cluster is analyzed independently
 
 clusters:
-  stage-project1:
-    env: stage
-    project: project1
-    prom_url: http://prometheus.stage.example
+  local-kind:
+    env: local
+    project: local
+    prom_url: http://localhost:9090
     owner_email:
-      - email1@example.com
+      - dev@localhost
 
-  prod-project2:
-    env: prod
-    project: project2
-    prom_url: http://prometheus.prod.example
-    owner_email:
-      - owner@example.com
-
-# Example with local Prometheus (for testing)
-#  local-kind:
-#    env: local
-#    project: local
-#    prom_url: http://localhost:9090
+#  stage-project1:
+#    env: stage
+#    project: project1
+#    prom_url: http://prometheus.stage.example
 #    owner_email:
-#      - dev@localhost
+#      - email1@example.com
+
+#  prod-project2:
+#    env: prod
+#    project: project2
+#    prom_url: http://prometheus.prod.example
+#    owner_email:
+#      - owner@example.com

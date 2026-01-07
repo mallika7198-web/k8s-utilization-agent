@@ -139,16 +139,17 @@ class PrometheusQueries:
     POD_MEMORY_P99 = 'quantile_over_time(0.99, container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
     POD_MEMORY_P100 = 'max_over_time(container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
     
+    # Pod to Node mapping - CRITICAL for node-scoped calculations
+    # Maps (namespace, pod) -> node for accurate per-node aggregation
+    POD_INFO = 'kube_pod_info'
+    
     # Node Metrics
     NODE_CPU_ALLOCATABLE = 'kube_node_status_allocatable{resource="cpu"}'
     NODE_MEMORY_ALLOCATABLE = 'kube_node_status_allocatable{resource="memory"}'
-    NODE_CPU_USAGE = 'sum by (instance)(rate(container_cpu_usage_seconds_total[5m]))'
-    NODE_MEMORY_USAGE = 'sum by (instance)(container_memory_working_set_bytes)'
+    # Current usage (not percentiles - avoids invalid PromQL with aggregation + range)
+    NODE_CPU_USAGE = 'sum by (node)(rate(container_cpu_usage_seconds_total{container!=""}[5m]))'
+    NODE_MEMORY_USAGE = 'sum by (node)(container_memory_working_set_bytes{container!=""})'
     NODE_INFO = 'kube_node_info'
-    
-    # Node Usage Percentiles
-    NODE_CPU_P95 = 'quantile_over_time(0.95, sum by (instance)(rate(container_cpu_usage_seconds_total[5m]))[7d:])'
-    NODE_MEMORY_P95 = 'quantile_over_time(0.95, sum by (instance)(container_memory_working_set_bytes)[7d:])'
     
     # HPA Metrics
     HPA_SPEC_MIN = 'kube_horizontalpodautoscaler_spec_min_replicas'
@@ -163,7 +164,20 @@ class PrometheusQueries:
 # Data Fetching
 # =============================================================================
 def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
-    """Fetch all pod-level metrics"""
+    """Fetch all pod-level metrics including pod-to-node mapping"""
+    
+    # Fetch pod-to-node mapping from kube_pod_info
+    # This is CRITICAL for node-scoped calculations in NODE_RIGHTSIZE
+    pod_info_raw = prometheus_query(prom_url, PrometheusQueries.POD_INFO)
+    pod_to_node = {}  # (namespace, pod) -> node
+    for item in pod_info_raw:
+        labels = item.get("metric", {})
+        ns = labels.get("namespace", "")
+        pod = labels.get("pod", "")
+        node = labels.get("node", "")
+        if ns and pod and node:
+            pod_to_node[(ns, pod)] = node
+    
     return {
         "cpu_requests": extract_metrics_by_labels(
             prometheus_query(prom_url, PrometheusQueries.POD_CPU_REQUESTS),
@@ -205,12 +219,19 @@ def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
             prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P100),
             ["namespace", "pod"]
         ),
+        # Pod-to-node mapping for node-scoped aggregation
+        "pod_to_node": pod_to_node,
     }
 
 
 def fetch_node_metrics(prom_url: str) -> Dict[str, Any]:
-    """Fetch all node-level metrics"""
-    # Get node info for instance -> node mapping
+    """Fetch all node-level metrics
+    
+    Note: Node usage is fetched as current values (not percentiles) to avoid
+    invalid PromQL with aggregation + range selectors. Node efficiency uses
+    current CPU/memory usage which is sufficient for sizing recommendations.
+    """
+    # Get node info for instance -> node mapping (legacy compatibility)
     node_info_raw = prometheus_query(prom_url, PrometheusQueries.NODE_INFO)
     instance_to_node = {}
     for item in node_info_raw:
@@ -229,21 +250,14 @@ def fetch_node_metrics(prom_url: str) -> Dict[str, Any]:
             prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_ALLOCATABLE),
             ["node"]
         ),
+        # Current usage by node (not percentiles - simpler and avoids invalid PromQL)
         "cpu_usage": extract_metrics_by_labels(
             prometheus_query(prom_url, PrometheusQueries.NODE_CPU_USAGE),
-            ["instance"]
+            ["node"]
         ),
         "memory_usage": extract_metrics_by_labels(
             prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_USAGE),
-            ["instance"]
-        ),
-        "cpu_p95": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.NODE_CPU_P95),
-            ["instance"]
-        ),
-        "memory_p95": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.NODE_MEMORY_P95),
-            ["instance"]
+            ["node"]
         ),
         "instance_to_node": instance_to_node,
     }
@@ -416,12 +430,30 @@ def analyze_pod_resize(pod_metrics: Dict[str, Any], env: str) -> List[Dict[str, 
 # =============================================================================
 # NODE_RIGHTSIZE Recommendations
 # =============================================================================
+def get_pods_on_node(node_name: str, pod_to_node: Dict[Tuple[str, str], str]) -> List[Tuple[str, str]]:
+    """Get list of (namespace, pod) tuples scheduled on a specific node
+    
+    This is CRITICAL for accurate node-scoped calculations.
+    Using cluster-wide pod totals would give incorrect fragmentation/efficiency.
+    """
+    return [pod_key for pod_key, node in pod_to_node.items() if node == node_name]
+
+
 def calculate_node_rightsize(
     node_name: str,
     node_metrics: Dict[str, Any],
     pod_metrics: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
-    """Calculate NODE_RIGHTSIZE recommendation for a single node"""
+    """Calculate NODE_RIGHTSIZE recommendation for a single node
+    
+    IMPORTANT: All pod aggregations are NODE-SCOPED using pod_to_node mapping.
+    This fixes the previous bug where cluster-wide totals were incorrectly used.
+    
+    Formulas (node-scoped):
+    - cpu_fragmentation = 1 - (Σ pod_cpu_p95_on_node / Σ pod_cpu_request_on_node)
+    - node_efficiency = 0.5 × (Σ pod_cpu_p95_on_node / node_cpu_capacity)
+                      + 0.5 × (node_memory_usage / node_memory_capacity)
+    """
     
     # Get node capacity
     cpu_allocatable = node_metrics["cpu_allocatable"].get((node_name,))
@@ -430,38 +462,50 @@ def calculate_node_rightsize(
     if not cpu_allocatable or not memory_allocatable:
         return None
     
-    # Get node usage (need to map instance -> node)
-    instance = None
-    for inst, nd in node_metrics["instance_to_node"].items():
-        if nd == node_name:
-            instance = inst
-            break
+    # Get current node memory usage (not percentile - avoids invalid PromQL)
+    node_memory_usage = node_metrics["memory_usage"].get((node_name,), 0)
     
-    if not instance:
-        # Try direct node name as instance
-        instance = node_name
+    # Get pod-to-node mapping
+    pod_to_node = pod_metrics.get("pod_to_node", {})
     
-    node_cpu_p95 = node_metrics["cpu_p95"].get((instance,), 0)
-    node_memory_p95 = node_metrics["memory_p95"].get((instance,), 0)
+    # Find all pods scheduled on THIS node
+    # This is the CRITICAL fix - we must scope to this node only
+    pods_on_node = get_pods_on_node(node_name, pod_to_node)
     
-    # Calculate sum of pod requests on this node
-    # Note: This is a simplification - in practice you'd need pod->node mapping
-    total_pod_cpu_request = sum(pod_metrics["cpu_requests"].values())
-    total_pod_cpu_p95 = sum(v for v in pod_metrics["cpu_p95"].values() if v)
-    total_pod_memory_request = sum(pod_metrics["memory_requests"].values())
+    if not pods_on_node:
+        # No pods on node - cannot calculate fragmentation
+        return None
     
-    # CPU Fragmentation: 1 - (Σ pod_cpu_p95 / Σ pod_cpu_request)
+    # Calculate NODE-SCOPED pod totals (NOT cluster-wide)
+    # Sum only requests and usage for pods actually on this node
+    total_pod_cpu_request_on_node = sum(
+        pod_metrics["cpu_requests"].get(pod_key, 0)
+        for pod_key in pods_on_node
+    )
+    total_pod_cpu_p95_on_node = sum(
+        pod_metrics["cpu_p95"].get(pod_key, 0) or 0
+        for pod_key in pods_on_node
+    )
+    total_pod_memory_request_on_node = sum(
+        pod_metrics["memory_requests"].get(pod_key, 0)
+        for pod_key in pods_on_node
+    )
+    
+    # CPU Fragmentation (node-scoped): 1 - (Σ pod_cpu_p95_on_node / Σ pod_cpu_request_on_node)
+    # High fragmentation = requests much higher than actual usage
     cpu_fragmentation = 0
-    if total_pod_cpu_request > 0:
-        cpu_fragmentation = 1 - (total_pod_cpu_p95 / total_pod_cpu_request)
+    if total_pod_cpu_request_on_node > 0:
+        cpu_fragmentation = 1 - (total_pod_cpu_p95_on_node / total_pod_cpu_request_on_node)
         cpu_fragmentation = max(0, min(1, cpu_fragmentation))
     
-    # Free Memory
-    free_memory = memory_allocatable - total_pod_memory_request
+    # Free Memory (node-scoped)
+    free_memory = memory_allocatable - total_pod_memory_request_on_node
     
-    # Node Efficiency: 0.5 × (Σ pod_cpu_p95 / node_cpu_capacity) + 0.5 × (node_memory_p95 / node_memory_capacity)
-    cpu_efficiency = total_pod_cpu_p95 / cpu_allocatable if cpu_allocatable > 0 else 0
-    memory_efficiency = node_memory_p95 / memory_allocatable if memory_allocatable > 0 else 0
+    # Node Efficiency (node-scoped):
+    # 0.5 × (Σ pod_cpu_p95_on_node / node_cpu_capacity) + 0.5 × (node_memory_usage / node_memory_capacity)
+    # Uses current memory usage (not percentile) to avoid invalid PromQL
+    cpu_efficiency = total_pod_cpu_p95_on_node / cpu_allocatable if cpu_allocatable > 0 else 0
+    memory_efficiency = node_memory_usage / memory_allocatable if memory_allocatable > 0 else 0
     node_efficiency = 0.5 * cpu_efficiency + 0.5 * memory_efficiency
     
     # Decision: IF node_efficiency is low AND fragmentation is high → NODE_RIGHTSIZE
@@ -486,9 +530,12 @@ def calculate_node_rightsize(
             "cpu_fragmentation": round(cpu_fragmentation, 3),
             "free_memory_bytes": int(free_memory),
             "node_efficiency": round(node_efficiency, 3),
+            "pods_on_node": len(pods_on_node),
+            "total_pod_cpu_request_on_node": round(total_pod_cpu_request_on_node, 4),
+            "total_pod_cpu_p95_on_node": round(total_pod_cpu_p95_on_node, 4),
         },
         "explanation": build_node_rightsize_explanation(
-            node_name, direction, cpu_fragmentation, node_efficiency
+            node_name, direction, cpu_fragmentation, node_efficiency, len(pods_on_node)
         ),
     }
 
@@ -497,12 +544,14 @@ def build_node_rightsize_explanation(
     node_name: str,
     direction: str,
     fragmentation: float,
-    efficiency: float
+    efficiency: float,
+    pod_count: int
 ) -> str:
     """Build explanation for NODE_RIGHTSIZE recommendation"""
     return (
         f"Node {node_name} has low efficiency ({efficiency:.1%}) "
-        f"and high CPU fragmentation ({fragmentation:.1%}). "
+        f"and high CPU fragmentation ({fragmentation:.1%}) "
+        f"across {pod_count} pods. "
         f"Recommendation: {direction}. "
         f"Consider consolidating workloads or resizing the node."
     )
@@ -526,12 +575,25 @@ def analyze_node_rightsize(
 # =============================================================================
 # HPA_MISALIGNMENT Detection
 # =============================================================================
+
+# Limitation: HPA to pod matching is heuristic
+HPA_POD_MATCHING_LIMITATION = (
+    "HPA to pod mapping is heuristic and depends on naming conventions. "
+    "Pods are matched if the HPA target name is a substring of the pod name."
+)
+
+
 def detect_hpa_misalignment(
     hpa_metrics: Dict[str, Any],
     pod_metrics: Dict[str, Any],
     env: str
 ) -> List[Dict[str, Any]]:
-    """Detect HPA misalignment issues"""
+    """Detect HPA misalignment issues
+    
+    LIMITATION: HPA target is matched to pods using name substring matching.
+    This is a heuristic that depends on standard Kubernetes naming conventions
+    (e.g., deployment 'myapp' creates pods 'myapp-xyz-abc').
+    """
     recommendations = []
     
     # Parse HPA info to get target deployments
@@ -559,9 +621,10 @@ def detect_hpa_misalignment(
         target_name = target_info.get("target_name", "")
         
         # Find pods matching this HPA's target
+        # NOTE: This is heuristic substring matching - see HPA_POD_MATCHING_LIMITATION
         matching_pods = [
             k for k in pod_metrics["cpu_p95"].keys()
-            if k[0] == ns and target_name in k[1]
+            if k[0] == ns and target_name and target_name in k[1]
         ]
         
         if not matching_pods:
@@ -569,7 +632,7 @@ def detect_hpa_misalignment(
         
         # Calculate average CPU usage for pods
         avg_cpu_usage = sum(
-            pod_metrics["cpu_p95"].get(p, 0) for p in matching_pods
+            pod_metrics["cpu_p95"].get(p, 0) or 0 for p in matching_pods
         ) / len(matching_pods)
         
         avg_cpu_request = sum(
@@ -577,7 +640,7 @@ def detect_hpa_misalignment(
         ) / len(matching_pods)
         
         avg_memory_p95 = sum(
-            pod_metrics["memory_p95"].get(p, 0) for p in matching_pods
+            pod_metrics["memory_p95"].get(p, 0) or 0 for p in matching_pods
         ) / len(matching_pods)
         
         avg_memory_request = sum(
@@ -594,8 +657,8 @@ def detect_hpa_misalignment(
         
         # Rule 2: Memory-bound workload with CPU HPA
         if avg_memory_request > 0 and avg_cpu_request > 0:
-            memory_ratio = avg_memory_p95 / avg_memory_request
-            cpu_ratio = avg_cpu_usage / avg_cpu_request
+            memory_ratio = avg_memory_p95 / avg_memory_request if avg_memory_request > 0 else 0
+            cpu_ratio = avg_cpu_usage / avg_cpu_request if avg_cpu_request > 0 else 0
             if memory_ratio > HIGH_MEMORY_PRESSURE_RATIO and cpu_ratio < LOW_CPU_USAGE_RATIO:
                 misalignment_reasons.append(
                     f"Memory-bound workload (memory {memory_ratio:.1%} of request) "
@@ -609,7 +672,7 @@ def detect_hpa_misalignment(
                 avg_utilization = avg_cpu_usage / avg_cpu_request
             if avg_utilization < 0.3:  # Low utilization
                 misalignment_reasons.append(
-                    f"High minReplicas ({min_replicas}) blocking consolidation "
+                    f"High minReplicas ({int(min_replicas)}) blocking consolidation "
                     f"with low utilization ({avg_utilization:.1%})"
                 )
         
@@ -629,9 +692,11 @@ def detect_hpa_misalignment(
                     "avg_cpu_request": round(avg_cpu_request, 4),
                     "avg_memory_p95": int(avg_memory_p95),
                     "avg_memory_request": int(avg_memory_request),
+                    "matched_pod_count": len(matching_pods),
                 },
                 "reasons": misalignment_reasons,
                 "explanation": "; ".join(misalignment_reasons),
+                "limitation": HPA_POD_MATCHING_LIMITATION,
             })
     
     return recommendations
@@ -716,7 +781,8 @@ def analyze_cluster(
         limitations.append(f"Pod metrics unavailable: {e}")
         pod_metrics = {k: {} for k in [
             "cpu_requests", "memory_requests", "cpu_limits", "memory_limits",
-            "cpu_p95", "cpu_p99", "cpu_p100", "memory_p95", "memory_p99", "memory_p100"
+            "cpu_p95", "cpu_p99", "cpu_p100", "memory_p95", "memory_p99", "memory_p100",
+            "pod_to_node"
         ]}
     
     try:
@@ -728,7 +794,6 @@ def analyze_cluster(
         node_metrics = {
             "cpu_allocatable": {}, "memory_allocatable": {},
             "cpu_usage": {}, "memory_usage": {},
-            "cpu_p95": {}, "memory_p95": {},
             "instance_to_node": {},
         }
     

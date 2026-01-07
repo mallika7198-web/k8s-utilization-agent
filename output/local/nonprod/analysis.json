@@ -1,0 +1,31 @@
+{
+  "cluster": "local-kind",
+  "env": "nonprod",
+  "project": "local",
+  "generated_at": "2026-01-07T03:43:52.505744+00:00",
+  "recommendations": [
+    {
+      "type": "NODE_RIGHTSIZE",
+      "node": "demo-control-plane",
+      "direction": "down",
+      "metrics": {
+        "cpu_allocatable": 11.0,
+        "memory_allocatable_bytes": 8217890816,
+        "cpu_fragmentation": 1,
+        "free_memory_bytes": 7376932864,
+        "node_efficiency": 0.0,
+        "pods_on_node": 16,
+        "total_pod_cpu_request_on_node": 1.35,
+        "total_pod_cpu_p95_on_node": 0
+      },
+      "explanation": "Node demo-control-plane has low efficiency (0.0%) and high CPU fragmentation (100.0%) across 16 pods. Recommendation: down. Consider consolidating workloads or resizing the node."
+    }
+  ],
+  "limitations": [],
+  "summary": {
+    "total_recommendations": 1,
+    "pod_resize_count": 0,
+    "node_rightsize_count": 1,
+    "hpa_misalignment_count": 0
+  }
+}
