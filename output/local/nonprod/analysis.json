@@ -2,56 +2,265 @@
   "cluster": "local-kind",
   "env": "nonprod",
   "project": "local",
-  "generated_at": "2026-01-07T05:12:09.624080+00:00",
+  "generated_at": "2026-01-07T05:36:32.728968+00:00",
   "recommendations": [
     {
-      "type": "NODE_RIGHTSIZE",
-      "node": "demo-control-plane",
-      "direction": "down",
-      "recommendation": {
-        "action": "DOWNSIZE_NODE",
-        "meaning": "Node is underutilized and can be replaced with a smaller instance to reduce cost"
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "kindnet-xq2p9",
+      "current": {
+        "cpu_request": 0.1,
+        "cpu_limit": 0.1,
+        "memory_request": 52428800.0,
+        "memory_limit": 52428800.0
       },
-      "metrics": {
-        "cpu_allocatable": 11.0,
-        "memory_allocatable": {
-          "bytes": 8217890816,
-          "gb": 7.7
-        },
-        "cpu_fragmentation": 1,
-        "cpu_fragmentation_undefined": false,
-        "free_memory": {
-          "bytes": 7376932864,
-          "gb": 6.9
-        },
-        "node_efficiency": 0.0,
-        "pods_on_node": 16,
-        "total_pod_cpu_request_on_node": 1.35,
-        "total_pod_cpu_p95_on_node": 0
+      "recommended": {
+        "cpu_request": 0.05,
+        "cpu_limit": 0.075,
+        "memory_request": 163132952,
+        "memory_limit": 244699428
       },
-      "explanation": "Node demo-control-plane has low efficiency (0.0%) and high CPU fragmentation (100.0%) across 16 pods. Recommendation: down. Consider consolidating workloads or resizing the node."
+      "usage_percentiles": {
+        "cpu_p95": 0.0018,
+        "cpu_p99": 0.0024,
+        "cpu_p100": 0.0035,
+        "memory_p95": 136138752,
+        "memory_p99": 148302684,
+        "memory_p100": 163041280
+      },
+      "explanation": "CPU request decrease by 50.0% based on P99 usage (0.002 cores); Memory request increase by 211.2% based on P99 usage (148.3MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "kube-controller-manager-demo-control-plane",
+      "current": {
+        "cpu_request": 0.2,
+        "cpu_limit": null,
+        "memory_request": null,
+        "memory_limit": null
+      },
+      "recommended": {
+        "cpu_request": 0.0731,
+        "cpu_limit": 0.1096,
+        "memory_request": 520115200,
+        "memory_limit": 780172800
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.0551,
+        "cpu_p99": 0.0609,
+        "cpu_p100": 0.0675,
+        "memory_p95": 471812505,
+        "memory_p99": 472832000,
+        "memory_p100": 473948160
+      },
+      "explanation": "CPU request decrease by 63.5% based on P99 usage (0.061 cores); Set memory request to 520.1MB based on P99 usage; Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "etcd-demo-control-plane",
+      "current": {
+        "cpu_request": 0.1,
+        "cpu_limit": null,
+        "memory_request": 104857600.0,
+        "memory_limit": null
+      },
+      "recommended": {
+        "cpu_request": 0.0886,
+        "cpu_limit": 0.133,
+        "memory_request": 358300495,
+        "memory_limit": 537450743
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.0683,
+        "cpu_p99": 0.0739,
+        "cpu_p100": 0.0775,
+        "memory_p95": 324923801,
+        "memory_p99": 325727723,
+        "memory_p100": 326533120
+      },
+      "explanation": "CPU request decrease by 11.4% based on P99 usage (0.074 cores); Memory request increase by 241.7% based on P99 usage (325.7MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "coredns-7d764666f9-2lswm",
+      "current": {
+        "cpu_request": 0.1,
+        "cpu_limit": null,
+        "memory_request": 73400320.0,
+        "memory_limit": 178257920.0
+      },
+      "recommended": {
+        "cpu_request": 0.05,
+        "cpu_limit": 0.075,
+        "memory_request": 229664579,
+        "memory_limit": 344496869
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.0081,
+        "cpu_p99": 0.01,
+        "cpu_p100": 0.0127,
+        "memory_p95": 205335347,
+        "memory_p99": 208785981,
+        "memory_p100": 210051072
+      },
+      "explanation": "CPU request decrease by 50.0% based on P99 usage (0.010 cores); Memory request increase by 212.9% based on P99 usage (208.8MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "kube-apiserver-demo-control-plane",
+      "current": {
+        "cpu_request": 0.25,
+        "cpu_limit": null,
+        "memory_request": null,
+        "memory_limit": null
+      },
+      "recommended": {
+        "cpu_request": 0.1878,
+        "cpu_limit": 0.2816,
+        "memory_request": 1363596095,
+        "memory_limit": 2045394143
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.1399,
+        "cpu_p99": 0.1565,
+        "cpu_p100": 0.1778,
+        "memory_p95": 1236005683,
+        "memory_p99": 1239632814,
+        "memory_p100": 1241530368
+      },
+      "explanation": "CPU request decrease by 24.9% based on P99 usage (0.156 cores); Set memory request to 1363.6MB based on P99 usage; Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "coredns-7d764666f9-jt9n5",
+      "current": {
+        "cpu_request": 0.1,
+        "cpu_limit": null,
+        "memory_request": 73400320.0,
+        "memory_limit": 178257920.0
+      },
+      "recommended": {
+        "cpu_request": 0.05,
+        "cpu_limit": 0.075,
+        "memory_request": 192794714,
+        "memory_limit": 289192071
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.0076,
+        "cpu_p99": 0.0124,
+        "cpu_p100": 0.0241,
+        "memory_p95": 172701696,
+        "memory_p99": 175267921,
+        "memory_p100": 177561600
+      },
+      "explanation": "CPU request decrease by 50.0% based on P99 usage (0.012 cores); Memory request increase by 162.7% based on P99 usage (175.3MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "kube-system",
+      "pod": "kube-scheduler-demo-control-plane",
+      "current": {
+        "cpu_request": 0.1,
+        "cpu_limit": null,
+        "memory_request": null,
+        "memory_limit": null
+      },
+      "recommended": {
+        "cpu_request": 0.05,
+        "cpu_limit": 0.075,
+        "memory_request": 270214123,
+        "memory_limit": 405321185
+      },
+      "usage_percentiles": {
+        "cpu_p95": 0.0305,
+        "cpu_p99": 0.033,
+        "cpu_p100": 0.0368,
+        "memory_p95": 244901273,
+        "memory_p99": 245649203,
+        "memory_p100": 246226944
+      },
+      "explanation": "CPU request decrease by 50.0% based on P99 usage (0.033 cores); Set memory request to 270.2MB based on P99 usage; Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "metrics-demo",
+      "pod": "web-b-9b6c874c7-xbjpr",
+      "current": {
+        "cpu_request": 0.2,
+        "cpu_limit": 0.4,
+        "memory_request": 268435456.0,
+        "memory_limit": 536870912.0
+      },
+      "recommended": {
+        "cpu_request": 1.4402,
+        "cpu_limit": 2.1603,
+        "memory_request": 68444569,
+        "memory_limit": 102666854
+      },
+      "usage_percentiles": {
+        "cpu_p95": 1.2001,
+        "cpu_p99": 1.2002,
+        "cpu_p100": 1.2002,
+        "memory_p95": 61890560,
+        "memory_p99": 62222336,
+        "memory_p100": 62222336
+      },
+      "explanation": "CPU request increase by 620.1% based on P99 usage (1.200 cores); Memory request decrease by 74.5% based on P99 usage (62.2MB); Safety factor: nonprod (1.10x)"
+    },
+    {
+      "type": "POD_RESIZE",
+      "namespace": "metrics-demo",
+      "pod": "web-b-9b6c874c7-8n65k",
+      "current": {
+        "cpu_request": 0.2,
+        "cpu_limit": 0.4,
+        "memory_request": 268435456.0,
+        "memory_limit": 536870912.0
+      },
+      "recommended": {
+        "cpu_request": 1.4403,
+        "cpu_limit": 2.1604,
+        "memory_request": 63371264,
+        "memory_limit": 95056896
+      },
+      "usage_percentiles": {
+        "cpu_p95": 1.2002,
+        "cpu_p99": 1.2002,
+        "cpu_p100": 1.2003,
+        "memory_p95": 57274368,
+        "memory_p99": 57610240,
+        "memory_p100": 57610240
+      },
+      "explanation": "CPU request increase by 620.1% based on P99 usage (1.200 cores); Memory request decrease by 76.4% based on P99 usage (57.6MB); Safety factor: nonprod (1.10x)"
     }
   ],
-  "limitations": [],
+  "limitations": [
+    "CPU reductions do not yet account for node-level memory pressure. Manual review recommended before applying CPU reduction on memory-constrained nodes."
+  ],
   "summary": {
-    "total_recommendations": 1,
+    "total_recommendations": 9,
     "pods": {
-      "affected": 0,
+      "affected": 9,
       "total": 9,
-      "text": "0 out of 9 pods need resizing"
+      "text": "9 out of 9 pods need resizing"
     },
     "nodes": {
-      "affected": 1,
+      "affected": 0,
       "total": 1,
-      "text": "1 out of 1 nodes show inefficiency"
+      "text": "0 out of 1 nodes show inefficiency"
     },
     "hpa": {
       "affected": 0,
       "total": 4,
       "text": "0 out of 4 HPAs are misaligned"
     },
-    "pod_resize_count": 0,
-    "node_rightsize_count": 1,
+    "pod_resize_count": 9,
+    "node_rightsize_count": 0,
     "hpa_misalignment_count": 0
   }
 }

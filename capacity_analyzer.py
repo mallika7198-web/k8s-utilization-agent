@@ -142,7 +142,12 @@ def extract_metrics_by_labels(
 # Prometheus Queries
 # =============================================================================
 def build_promql_queries():
-    """Build PromQL queries using configured QUERY_WINDOW"""
+    """Build PromQL queries using configured QUERY_WINDOW
+    
+    Note: quantile_over_time with subqueries doesn't support 'by' clause directly.
+    We wrap with 'sum by' for proper label grouping.
+    For CPU, we use rate() inside the subquery which requires a shorter step.
+    """
     return {
         # Pod Requests & Limits
         "POD_CPU_REQUESTS": 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="cpu"})',
@@ -150,13 +155,14 @@ def build_promql_queries():
         "POD_CPU_LIMITS": 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="cpu"})',
         "POD_MEMORY_LIMITS": 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="memory"})',
         # Pod Usage - CPU Percentiles (from Prometheus)
-        "POD_CPU_P95": f'quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
-        "POD_CPU_P99": f'quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
-        "POD_CPU_P100": f'max_over_time(rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
+        # Use sum by() wrapper since quantile_over_time doesn't support 'by' with subqueries
+        "POD_CPU_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
+        "POD_CPU_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
+        "POD_CPU_P100": f'sum by (namespace, pod)(max_over_time(rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
         # Pod Usage - Memory Percentiles (from Prometheus)
-        "POD_MEMORY_P95": f'quantile_over_time(0.95, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
-        "POD_MEMORY_P99": f'quantile_over_time(0.99, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
-        "POD_MEMORY_P100": f'max_over_time(container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
+        "POD_MEMORY_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
+        "POD_MEMORY_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
+        "POD_MEMORY_P100": f'sum by (namespace, pod)(max_over_time(container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
     }
 
 
