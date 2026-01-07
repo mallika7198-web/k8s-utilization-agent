@@ -2,7 +2,7 @@
   "cluster": "local-kind",
   "env": "nonprod",
   "project": "local",
-  "generated_at": "2026-01-07T03:43:52.505744+00:00",
+  "generated_at": "2026-01-07T04:11:27.033736+00:00",
   "recommendations": [
     {
       "type": "NODE_RIGHTSIZE",
@@ -12,6 +12,7 @@
         "cpu_allocatable": 11.0,
         "memory_allocatable_bytes": 8217890816,
         "cpu_fragmentation": 1,
+        "cpu_fragmentation_undefined": false,
         "free_memory_bytes": 7376932864,
         "node_efficiency": 0.0,
         "pods_on_node": 16,

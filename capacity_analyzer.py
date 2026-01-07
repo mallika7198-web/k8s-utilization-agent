@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # =============================================================================
 PROMETHEUS_TIMEOUT = 30
+PROMETHEUS_VERIFY_TLS = False  # Set True for production with valid certs
 QUERY_WINDOW = "7d"
 
 # Thresholds
@@ -77,7 +78,7 @@ def prometheus_query(prom_url: str, query: str) -> List[Dict[str, Any]]:
             f"{prom_url}/api/v1/query",
             params={"query": query},
             timeout=PROMETHEUS_TIMEOUT,
-            verify=False
+            verify=PROMETHEUS_VERIFY_TLS
         )
         if response.status_code == 200:
             return response.json().get("data", {}).get("result", [])
@@ -120,24 +121,36 @@ def extract_metrics_by_labels(
 # =============================================================================
 # Prometheus Queries
 # =============================================================================
+def build_promql_queries():
+    """Build PromQL queries using configured QUERY_WINDOW"""
+    return {
+        # Pod Requests & Limits
+        "POD_CPU_REQUESTS": 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="cpu"})',
+        "POD_MEMORY_REQUESTS": 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="memory"})',
+        "POD_CPU_LIMITS": 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="cpu"})',
+        "POD_MEMORY_LIMITS": 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="memory"})',
+        # Pod Usage - CPU Percentiles (from Prometheus)
+        "POD_CPU_P95": f'quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
+        "POD_CPU_P99": f'quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
+        "POD_CPU_P100": f'max_over_time(rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:]) by (namespace, pod)',
+        # Pod Usage - Memory Percentiles (from Prometheus)
+        "POD_MEMORY_P95": f'quantile_over_time(0.95, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
+        "POD_MEMORY_P99": f'quantile_over_time(0.99, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
+        "POD_MEMORY_P100": f'max_over_time(container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}:]) by (namespace, pod)',
+    }
+
+
 class PrometheusQueries:
-    """All Prometheus queries as per specification"""
+    """All Prometheus queries as per specification
+    
+    Note: Percentile queries use QUERY_WINDOW constant for consistency.
+    """
     
     # Pod Requests & Limits
     POD_CPU_REQUESTS = 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="cpu"})'
     POD_MEMORY_REQUESTS = 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="memory"})'
     POD_CPU_LIMITS = 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="cpu"})'
     POD_MEMORY_LIMITS = 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="memory"})'
-    
-    # Pod Usage - CPU Percentiles (from Prometheus)
-    POD_CPU_P95 = 'quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
-    POD_CPU_P99 = 'quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
-    POD_CPU_P100 = 'max_over_time(rate(container_cpu_usage_seconds_total{container!=""}[5m])[7d:]) by (namespace, pod)'
-    
-    # Pod Usage - Memory Percentiles (from Prometheus)
-    POD_MEMORY_P95 = 'quantile_over_time(0.95, container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
-    POD_MEMORY_P99 = 'quantile_over_time(0.99, container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
-    POD_MEMORY_P100 = 'max_over_time(container_memory_working_set_bytes{container!=""}[7d:]) by (namespace, pod)'
     
     # Pod to Node mapping - CRITICAL for node-scoped calculations
     # Maps (namespace, pod) -> node for accurate per-node aggregation
@@ -178,6 +191,9 @@ def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
         if ns and pod and node:
             pod_to_node[(ns, pod)] = node
     
+    # Build queries with configured QUERY_WINDOW
+    queries = build_promql_queries()
+    
     return {
         "cpu_requests": extract_metrics_by_labels(
             prometheus_query(prom_url, PrometheusQueries.POD_CPU_REQUESTS),
@@ -196,27 +212,27 @@ def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
             ["namespace", "pod"]
         ),
         "cpu_p95": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P95),
+            prometheus_query(prom_url, queries["POD_CPU_P95"]),
             ["namespace", "pod"]
         ),
         "cpu_p99": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P99),
+            prometheus_query(prom_url, queries["POD_CPU_P99"]),
             ["namespace", "pod"]
         ),
         "cpu_p100": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_CPU_P100),
+            prometheus_query(prom_url, queries["POD_CPU_P100"]),
             ["namespace", "pod"]
         ),
         "memory_p95": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P95),
+            prometheus_query(prom_url, queries["POD_MEMORY_P95"]),
             ["namespace", "pod"]
         ),
         "memory_p99": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P99),
+            prometheus_query(prom_url, queries["POD_MEMORY_P99"]),
             ["namespace", "pod"]
         ),
         "memory_p100": extract_metrics_by_labels(
-            prometheus_query(prom_url, PrometheusQueries.POD_MEMORY_P100),
+            prometheus_query(prom_url, queries["POD_MEMORY_P100"]),
             ["namespace", "pod"]
         ),
         # Pod-to-node mapping for node-scoped aggregation
@@ -290,13 +306,25 @@ def fetch_hpa_metrics(prom_url: str) -> Dict[str, Any]:
 # =============================================================================
 # POD_RESIZE Recommendations
 # =============================================================================
+# Known limitation for Phase-1
+MEMORY_PRESSURE_LIMITATION = (
+    "CPU reductions do not yet account for node-level memory pressure. "
+    "Manual review recommended before applying CPU reduction on memory-constrained nodes."
+)
+
+
 def calculate_pod_resize(
     namespace: str,
     pod: str,
     pod_metrics: Dict[str, Any],
     env: str
 ) -> Optional[Dict[str, Any]]:
-    """Calculate POD_RESIZE recommendation for a single pod"""
+    """Calculate POD_RESIZE recommendation for a single pod
+    
+    TODO: Add node-level memory pressure check before recommending CPU reduction.
+    Design rule: Do NOT reduce CPU if memory is already tight on the node.
+    Currently not enforced - see MEMORY_PRESSURE_LIMITATION.
+    """
     key = (namespace, pod)
     
     # Get current values
@@ -494,9 +522,13 @@ def calculate_node_rightsize(
     # CPU Fragmentation (node-scoped): 1 - (Σ pod_cpu_p95_on_node / Σ pod_cpu_request_on_node)
     # High fragmentation = requests much higher than actual usage
     cpu_fragmentation = 0
+    cpu_fragmentation_undefined = False
     if total_pod_cpu_request_on_node > 0:
         cpu_fragmentation = 1 - (total_pod_cpu_p95_on_node / total_pod_cpu_request_on_node)
         cpu_fragmentation = max(0, min(1, cpu_fragmentation))
+    else:
+        # Edge case: no CPU requests on node (daemon-only or empty node)
+        cpu_fragmentation_undefined = True
     
     # Free Memory (node-scoped)
     free_memory = memory_allocatable - total_pod_memory_request_on_node
@@ -520,14 +552,15 @@ def calculate_node_rightsize(
     else:
         direction = "down"
     
-    return {
+    result = {
         "type": "NODE_RIGHTSIZE",
         "node": node_name,
         "direction": direction,
         "metrics": {
             "cpu_allocatable": round(cpu_allocatable, 2),
             "memory_allocatable_bytes": int(memory_allocatable),
-            "cpu_fragmentation": round(cpu_fragmentation, 3),
+            "cpu_fragmentation": round(cpu_fragmentation, 3) if not cpu_fragmentation_undefined else None,
+            "cpu_fragmentation_undefined": cpu_fragmentation_undefined,
             "free_memory_bytes": int(free_memory),
             "node_efficiency": round(node_efficiency, 3),
             "pods_on_node": len(pods_on_node),
@@ -538,6 +571,12 @@ def calculate_node_rightsize(
             node_name, direction, cpu_fragmentation, node_efficiency, len(pods_on_node)
         ),
     }
+    
+    # Add limitation if CPU fragmentation is undefined
+    if cpu_fragmentation_undefined:
+        result["limitation"] = f"CPU fragmentation undefined on node {node_name} (no CPU requests)"
+    
+    return result
 
 
 def build_node_rightsize_explanation(
@@ -725,13 +764,25 @@ def generate_output(
     limitations: List[str]
 ) -> Dict[str, Any]:
     """Generate analysis output JSON"""
+    # Add global limitations
+    all_limitations = limitations.copy()
+    
+    # Check if any POD_RESIZE recommendations exist - add memory pressure limitation
+    if any(r["type"] == "POD_RESIZE" for r in recommendations):
+        all_limitations.append(MEMORY_PRESSURE_LIMITATION)
+    
+    # Check for undefined CPU fragmentation in NODE_RIGHTSIZE
+    for rec in recommendations:
+        if rec["type"] == "NODE_RIGHTSIZE" and rec.get("limitation"):
+            all_limitations.append(rec["limitation"])
+    
     return {
         "cluster": cluster_name,
         "env": "prod" if is_prod(env) else "nonprod",
         "project": project,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "recommendations": recommendations,
-        "limitations": limitations,
+        "limitations": all_limitations,
         "summary": {
             "total_recommendations": len(recommendations),
             "pod_resize_count": len([r for r in recommendations if r["type"] == "POD_RESIZE"]),

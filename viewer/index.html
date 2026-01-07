@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Capacity Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header id="header">
+        <h1>Kubernetes Capacity Analysis</h1>
+        <div class="header-meta">
+            <span id="cluster-name">--</span>
+            <span class="separator">|</span>
+            <span id="env-badge">--</span>
+            <span class="separator">|</span>
+            <span id="project-name">--</span>
+            <span class="separator">|</span>
+            <span id="generated-at">--</span>
+        </div>
+    </header>
+
+    <!-- Controls -->
+    <section class="controls">
+        <div class="control-group">
+            <label for="project-select">Project:</label>
+            <select id="project-select">
+                <option value="">-- Select --</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="env-select">Environment:</label>
+            <select id="env-select">
+                <option value="">-- Select --</option>
+                <option value="prod">prod</option>
+                <option value="nonprod">nonprod</option>
+            </select>
+        </div>
+        <button id="load-btn">Load Analysis</button>
+    </section>
+
+    <!-- Main Content -->
+    <main id="main-content">
+        <!-- Summary Section -->
+        <section id="summary-section" class="section">
+            <h2>Summary</h2>
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <span class="count" id="pod-resize-count">0</span>
+                    <span class="label">Pod Resize</span>
+                </div>
+                <div class="summary-card">
+                    <span class="count" id="node-rightsize-count">0</span>
+                    <span class="label">Node Right-Size</span>
+                </div>
+                <div class="summary-card">
+                    <span class="count" id="hpa-misalignment-count">0</span>
+                    <span class="label">HPA Misalignment</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pod Resize Section -->
+        <section id="pod-resize-section" class="section">
+            <h2>Pod Resize Recommendations</h2>
+            <div id="pod-resize-content" class="content-area">
+                <p class="empty-state">No pod resize recommendations.</p>
+            </div>
+        </section>
+
+        <!-- Node Right-Size Section -->
+        <section id="node-rightsize-section" class="section">
+            <h2>Node Right-Size Recommendations</h2>
+            <div id="node-rightsize-content" class="content-area">
+                <p class="empty-state">No node right-size recommendations.</p>
+            </div>
+        </section>
+
+        <!-- HPA Misalignment Section -->
+        <section id="hpa-misalignment-section" class="section">
+            <h2>HPA Misalignment</h2>
+            <div id="hpa-misalignment-content" class="content-area">
+                <p class="empty-state">No HPA misalignment detected.</p>
+            </div>
+        </section>
+
+        <!-- Limitations Section (Always visible) -->
+        <section id="limitations-section" class="section">
+            <h2>Limitations</h2>
+            <div id="limitations-content" class="content-area">
+                <p class="empty-state">No limitations reported.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Error Display -->
+    <div id="error-display" class="error-display hidden">
+        <p id="error-message"></p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
