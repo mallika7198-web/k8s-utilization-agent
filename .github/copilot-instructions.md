@@ -402,3 +402,219 @@ Suggest disabling HPA
 Infer behavior from custom metrics
 
 Generate code and output text that follows these rules exactly.
+
+
+FINAL COPILOT PROMPT – NODE + HPA + LIMITATION
+
+You are an expert Python platform engineer with deep Kubernetes and Prometheus expertise.
+Generate clean, lightweight, production-grade Python code for cluster analysis.
+
+🎯 Objective
+
+Build a Python application that:
+
+Analyzes Node sizing
+
+Highlights HPA misalignment
+
+Produces simple, explainable recommendations
+
+The tool must be read-only, deterministic, and easy to understand.
+
+🔧 Configuration Input (YAML)
+clusters:
+  stage-project1:
+    env: stage
+    project: project1
+    prom_url: http://prometheus.stage.example
+    owner_email:
+      - email1@example.com
+    exclude_namespaces:
+      - kube-system
+      - monitoring
+    analysis_window_days: 7
+    limitations_text: >
+      Results are based on recent data and may change over time.
+
+thresholds:
+  node:
+    cpu_low_pct: 40
+    cpu_high_pct: 75
+    memory_low_pct: 50
+    memory_high_pct: 75
+
+  hpa:
+    cpu_low_util_pct: 40
+    cpu_very_low_util_pct: 30
+    memory_high_util_pct: 85
+
+🔁 Execution Rules
+
+Loop through each cluster
+
+Read all thresholds and text from config
+
+Query Prometheus via HTTP API only
+
+Do NOT calculate percentiles in Python
+
+📊 Metrics to Use
+Node
+
+Node allocatable CPU & memory
+
+Pod CPU P95
+
+Pod memory requests
+
+HPA
+
+kube_horizontalpodautoscaler_*
+
+Pod CPU & memory requests
+
+Pod CPU P95
+
+Pod memory P95
+
+🧮 NODE ANALYSIS (IMPLEMENTS EXACTLY)
+Calculations
+node_cpu_utilization =
+Σ pod_cpu_p95 / node_cpu_capacity
+
+node_memory_utilization =
+Σ pod_memory_request / node_memory_capacity
+
+cpu_fragmentation =
+1 − ( Σ pod_cpu_p95 / Σ pod_cpu_request )
+
+Node Recommendation Logic
+IF cpu_utilization < cpu_low_pct
+AND memory_utilization < memory_low_pct
+→ scale down
+
+IF cpu_utilization > cpu_high_pct
+OR memory_utilization > memory_high_pct
+→ scale up
+
+ELSE
+→ right size
+
+Node Output (MANDATORY FORMAT)
+{
+  "component": "node",
+  "node": "node-name",
+  "recommendation": "scale down | scale up | right size",
+  "reason": "CPU utilization is 32% and memory utilization is 41%, indicating the node is underused.",
+  "confidence": "low | medium | high"
+}
+
+
+Confidence rules
+
+High: clear threshold breach
+
+Medium: near threshold
+
+Low: borderline or mixed signals
+
+🧮 HPA ANALYSIS (SIMPLE & HEURISTIC)
+Mapping rule
+
+Match HPA to pods by name:
+
+hpa_name is a substring of pod_name
+
+
+If no pods match, skip HPA analysis
+
+HPA Checks
+
+Low CPU usage
+
+cpu_p95 < cpu_low_util_pct% of cpu_request
+
+
+Recommendation text:
+
+HPA may be scaling based on CPU requests that are higher than actual usage.
+
+Memory-bound workload
+
+memory_p95 ≥ memory_high_util_pct% of memory_request
+AND cpu_p95 < cpu_low_util_pct% of cpu_request
+
+
+Recommendation text:
+
+The app uses a lot of memory, but HPA scales on CPU.
+
+Minimum replicas
+
+minReplicas > 1
+AND avg_cpu_utilization < cpu_very_low_util_pct%
+
+
+Recommendation text:
+
+Consider reducing the minimum replicas if usage stays low.
+
+Maximum replicas
+
+current_replicas << maxReplicas
+
+
+Recommendation text:
+
+Consider lowering the maximum replicas if they are rarely used.
+
+HPA Output (MANDATORY FORMAT)
+{
+  "component": "hpa",
+  "target": "namespace/workload",
+  "recommendation": "simple english text",
+  "reason": "Observed CPU and memory usage over the analysis window.",
+  "confidence": "low | medium"
+}
+
+⚠️ Common Limitation (CONFIG-DRIVEN)
+
+Read limitations_text from config
+
+Include it once in the final output
+
+Example:
+
+{
+  "limitations": "Results are based on recent data and may change over time."
+}
+
+📤 Final Output
+
+One JSON file per cluster
+
+Includes:
+
+Node recommendations
+
+HPA recommendations
+
+Common limitation text
+
+🧩 Coding Constraints
+
+Python + requests + pyyaml only
+
+Prefer functions
+
+Keep logic simple and readable
+
+No hardcoded thresholds or text
+
+Generate the full Python code.
+Output only the code.
+Start now.
+
+
+
+Move relavent constants to config.yaml 

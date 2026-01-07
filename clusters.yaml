@@ -11,3 +11,54 @@ clusters:
       - dev@localhost
     exclude_namespaces:
       - kube-system
+
+# Global settings
+settings:
+  query_window: "7d"                    # Analysis window for percentile queries
+  prometheus_timeout: 30                # Prometheus query timeout in seconds
+  prometheus_verify_tls: false          # TLS verification for Prometheus
+
+# Pod resize thresholds
+pod:
+  cpu_floor_prod: 0.1                   # 100m minimum CPU for prod
+  cpu_floor_nonprod: 0.05               # 50m minimum CPU for nonprod
+  safety_factor_prod: 1.15              # 15% headroom for prod
+  safety_factor_nonprod: 1.10           # 10% headroom for nonprod
+  cpu_request_multiplier: 1.20          # CPU request = P99 × 1.20
+  cpu_limit_request_multiplier: 1.50    # CPU limit = request × 1.50
+  cpu_limit_p100_multiplier: 1.25       # CPU limit = P100 × 1.25
+  memory_limit_request_multiplier: 1.50 # Memory limit = request × 1.50
+  memory_limit_p100_multiplier: 1.25    # Memory limit = P100 × 1.25
+  change_tolerance: 0.10                # 10% tolerance before recommending change
+
+# Memory bucket normalization (with 2% buffer for node packing)
+memory_buckets_mi:
+  - 256    # 251Mi with buffer
+  - 512    # 502Mi with buffer
+  - 1024   # 1003Mi with buffer
+  - 2048   # 2007Mi with buffer
+  - 4096   # 4014Mi with buffer
+  - 8192   # 8028Mi with buffer
+memory_buffer_factor: 0.98              # 2% buffer
+
+# Node thresholds
+thresholds:
+  node:
+    cpu_low_pct: 40                     # Below this = oversized
+    cpu_high_pct: 75                    # Above this = tight
+    memory_low_pct: 50                  # Below this = oversized
+    memory_high_pct: 75                 # Above this = tight
+    usable_capacity_factor: 0.80        # 80% headroom for safe scheduling
+    shape_imbalance_threshold: 0.25     # CPU vs memory pressure difference
+  hpa:
+    cpu_low_util_pct: 40                # CPU usage << request
+    cpu_very_low_util_pct: 30           # Very low utilization for minReplicas
+    memory_high_util_pct: 85            # Memory-bound workload threshold
+
+# Single limitations text (shown once in output)
+limitations_text: >
+  Analysis is based on observed metrics over the configured window.
+  Recommendations are advisory and should be validated before applying.
+  HPA analysis uses heuristic name matching.
+  Node recommendations do not account for cloud provider pricing.
+

@@ -30,86 +30,88 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Constants
+# Default Configuration (overridden by config.yaml)
 # =============================================================================
-PROMETHEUS_TIMEOUT = 30
-PROMETHEUS_VERIFY_TLS = False  # Set True for production with valid certs
-QUERY_WINDOW = "7d"
-
-# Thresholds
-CPU_FLOOR_PROD = 0.1  # 100m
-CPU_FLOOR_NONPROD = 0.05  # 50m
-SAFETY_FACTOR_PROD = 1.15
-SAFETY_FACTOR_NONPROD = 1.10
-CPU_REQUEST_MULTIPLIER = 1.20
-CPU_LIMIT_REQUEST_MULTIPLIER = 1.50
-CPU_LIMIT_P100_MULTIPLIER = 1.25
-MEMORY_LIMIT_REQUEST_MULTIPLIER = 1.50
-MEMORY_LIMIT_P100_MULTIPLIER = 1.25
-
-# Memory bucket normalization with 2% buffer (to prevent tight node packing)
-# Buckets: 256Mi, 512Mi, 1Gi, 2Gi, 4Gi, 8Gi
-# Buffer: bucket × 0.98
-MEMORY_BUFFER_FACTOR = 0.98
-MEMORY_BUCKETS_BYTES = [
-    int(256 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),   # 251Mi
-    int(512 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),   # 502Mi
-    int(1024 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 1003Mi (1Gi)
-    int(2048 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 2007Mi (2Gi)
-    int(4096 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 4014Mi (4Gi)
-    int(8192 * 1024 * 1024 * MEMORY_BUFFER_FACTOR),  # 8028Mi (8Gi)
-]
-
-# Fragmentation/efficiency thresholds
-LOW_EFFICIENCY_THRESHOLD = 0.3
-HIGH_FRAGMENTATION_THRESHOLD = 0.5
-LOW_CPU_USAGE_RATIO = 0.2  # avg << request
-HIGH_MEMORY_PRESSURE_RATIO = 0.9  # memory_p95 ≈ request
-
-# Node recommendation thresholds (new calculation-based approach)
-# Usable capacity per node (80% headroom for safe scheduling)
-NODE_USABLE_CAPACITY_FACTOR = 0.80
-# Node efficiency interpretation
-# < 0.40 → strongly oversized
-# 0.40 – 0.65 → moderately oversized
-# 0.65 – 0.85 → right-sized
-# > 0.85 → tight
-NODE_EFFICIENCY_STRONGLY_OVERSIZED = 0.40
-NODE_EFFICIENCY_MODERATELY_OVERSIZED = 0.65
-NODE_EFFICIENCY_RIGHT_SIZED = 0.85
-# Shape imbalance threshold: if abs(cpu_pressure - memory_pressure) > 0.25
-NODE_SHAPE_IMBALANCE_THRESHOLD = 0.25
-
-# Node recommendation directions (output: up | down | right-size)
-NODE_DIRECTIONS = {
-    "down": "Cluster can be consolidated to fewer or smaller nodes",
-    "up": "Nodes are running tight on resources",
-    "right-size": "Current node shape does not match workload profile"
+DEFAULT_CONFIG = {
+    "settings": {
+        "query_window": "7d",
+        "prometheus_timeout": 30,
+        "prometheus_verify_tls": False,
+    },
+    "pod": {
+        "cpu_floor_prod": 0.1,
+        "cpu_floor_nonprod": 0.05,
+        "safety_factor_prod": 1.15,
+        "safety_factor_nonprod": 1.10,
+        "cpu_request_multiplier": 1.20,
+        "cpu_limit_request_multiplier": 1.50,
+        "cpu_limit_p100_multiplier": 1.25,
+        "memory_limit_request_multiplier": 1.50,
+        "memory_limit_p100_multiplier": 1.25,
+        "change_tolerance": 0.10,
+    },
+    "memory_buckets_mi": [256, 512, 1024, 2048, 4096, 8192],
+    "memory_buffer_factor": 0.98,
+    "thresholds": {
+        "node": {
+            "cpu_low_pct": 40,
+            "cpu_high_pct": 75,
+            "memory_low_pct": 50,
+            "memory_high_pct": 75,
+            "usable_capacity_factor": 0.80,
+            "shape_imbalance_threshold": 0.25,
+        },
+        "hpa": {
+            "cpu_low_util_pct": 40,
+            "cpu_very_low_util_pct": 30,
+            "memory_high_util_pct": 85,
+        },
+    },
+    "limitations_text": "Analysis is advisory. Validate before applying.",
 }
 
-# Allowed node recommendation statements (exact wording per spec)
+# Node recommendation statements (exact wording per spec)
 NODE_STATEMENTS = {
     "consolidation": "Workloads can be consolidated onto fewer nodes after applying pod recommendations.",
     "shape_imbalance": "Current node shape appears unbalanced for observed CPU and memory usage.",
     "smaller_nodes": "Using more smaller nodes may improve packing efficiency.",
 }
 
-# Required node limitations (added to global limitations)
-NODE_LIMITATIONS = [
-    "Node recommendations are directional and heuristic.",
-    "Cloud provider instance availability and pricing are not considered.",
-    "Pod redistribution assumes normal Kubernetes scheduler behavior.",
-    "Validate node changes in non-production before applying.",
-]
+# HPA advisory statements
+HPA_STATEMENTS = {
+    "min_replicas": "Consider reducing the minimum replica count if sustained usage remains low.",
+    "max_replicas": "Consider lowering the maximum replica count if peak scaling is rarely reached.",
+    "cpu_based": "HPA may be scaling based on CPU requests that are higher than actual usage.",
+    "memory_bound": "Workload appears memory-bound, but HPA is configured to scale on CPU.",
+}
 
 
 # =============================================================================
-# Configuration Loading
+# Configuration Loading & Helpers
 # =============================================================================
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load YAML configuration file"""
+    """Load YAML configuration file and merge with defaults"""
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    return config
+
+
+def get_config_value(config: Dict[str, Any], *keys, default=None):
+    """Safely get nested config value with default fallback"""
+    value = config
+    for key in keys:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return default
+    return value
+
+
+def build_memory_buckets(config: Dict[str, Any]) -> List[int]:
+    """Build memory bucket list from config with buffer factor"""
+    buckets_mi = get_config_value(config, "memory_buckets_mi", default=DEFAULT_CONFIG["memory_buckets_mi"])
+    buffer = get_config_value(config, "memory_buffer_factor", default=DEFAULT_CONFIG["memory_buffer_factor"])
+    return [int(mi * 1024 * 1024 * buffer) for mi in buckets_mi]
 
 
 def is_prod(env: str) -> bool:
@@ -117,15 +119,14 @@ def is_prod(env: str) -> bool:
     return env.lower() == "prod"
 
 
-def normalize_memory_to_bucket(memory_bytes: float) -> int:
+def normalize_memory_to_bucket(memory_bytes: float, memory_buckets: List[int]) -> int:
     """
-    Round memory up to the next standard bucket with 2% buffer.
-    Buckets (with buffer): 251Mi, 502Mi, 1003Mi, 2007Mi, 4014Mi, 8028Mi
+    Round memory up to the next standard bucket with buffer.
     
     Why: Standard shapes improve node packing efficiency.
-    2% buffer prevents tight scheduling that could cause OOM.
+    Buffer prevents tight scheduling that could cause OOM.
     """
-    for bucket in MEMORY_BUCKETS_BYTES:
+    for bucket in memory_buckets:
         if memory_bytes <= bucket:
             return bucket
     # If larger than max bucket, return as-is (no normalization for huge pods)
@@ -135,14 +136,22 @@ def normalize_memory_to_bucket(memory_bytes: float) -> int:
 # =============================================================================
 # Prometheus Client
 # =============================================================================
-def prometheus_query(prom_url: str, query: str) -> List[Dict[str, Any]]:
+# Module-level defaults (used when no config passed)
+PROMETHEUS_TIMEOUT = DEFAULT_CONFIG["settings"]["prometheus_timeout"]
+PROMETHEUS_VERIFY_TLS = DEFAULT_CONFIG["settings"]["prometheus_verify_tls"]
+
+
+def prometheus_query(prom_url: str, query: str, timeout: int = None, verify_tls: bool = None) -> List[Dict[str, Any]]:
     """Execute instant query against Prometheus"""
+    timeout = timeout if timeout is not None else PROMETHEUS_TIMEOUT
+    verify_tls = verify_tls if verify_tls is not None else PROMETHEUS_VERIFY_TLS
+    
     try:
         response = requests.get(
             f"{prom_url}/api/v1/query",
             params={"query": query},
-            timeout=PROMETHEUS_TIMEOUT,
-            verify=PROMETHEUS_VERIFY_TLS
+            timeout=timeout,
+            verify=verify_tls
         )
         if response.status_code == 200:
             return response.json().get("data", {}).get("result", [])
@@ -185,13 +194,18 @@ def extract_metrics_by_labels(
 # =============================================================================
 # Prometheus Queries
 # =============================================================================
-def build_promql_queries():
-    """Build PromQL queries using configured QUERY_WINDOW
+# Default query window used when building PromQL queries
+DEFAULT_QUERY_WINDOW = DEFAULT_CONFIG["settings"]["query_window"]
+
+
+def build_promql_queries(query_window: str = None):
+    """Build PromQL queries using configured query_window
     
     Note: quantile_over_time with subqueries doesn't support 'by' clause directly.
     We wrap with 'sum by' for proper label grouping.
     For CPU, we use rate() inside the subquery which requires a shorter step.
     """
+    window = query_window or DEFAULT_QUERY_WINDOW
     return {
         # Pod Requests & Limits
         "POD_CPU_REQUESTS": 'sum by (namespace, pod)(kube_pod_container_resource_requests{resource="cpu"})',
@@ -200,20 +214,21 @@ def build_promql_queries():
         "POD_MEMORY_LIMITS": 'sum by (namespace, pod)(kube_pod_container_resource_limits{resource="memory"})',
         # Pod Usage - CPU Percentiles (from Prometheus)
         # Use sum by() wrapper since quantile_over_time doesn't support 'by' with subqueries
-        "POD_CPU_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
-        "POD_CPU_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
-        "POD_CPU_P100": f'sum by (namespace, pod)(max_over_time(rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{QUERY_WINDOW}:5m]))',
+        "POD_CPU_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{window}:5m]))',
+        "POD_CPU_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{window}:5m]))',
+        "POD_CPU_P100": f'sum by (namespace, pod)(max_over_time(rate(container_cpu_usage_seconds_total{{container!=""}}[5m])[{window}:5m]))',
         # Pod Usage - Memory Percentiles (from Prometheus)
-        "POD_MEMORY_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
-        "POD_MEMORY_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
-        "POD_MEMORY_P100": f'sum by (namespace, pod)(max_over_time(container_memory_working_set_bytes{{container!=""}}[{QUERY_WINDOW}]))',
+        "POD_MEMORY_P95": f'sum by (namespace, pod)(quantile_over_time(0.95, container_memory_working_set_bytes{{container!=""}}[{window}]))',
+        "POD_MEMORY_P99": f'sum by (namespace, pod)(quantile_over_time(0.99, container_memory_working_set_bytes{{container!=""}}[{window}]))',
+        "POD_MEMORY_P100": f'sum by (namespace, pod)(max_over_time(container_memory_working_set_bytes{{container!=""}}[{window}]))',
     }
 
 
 class PrometheusQueries:
     """All Prometheus queries as per specification
     
-    Note: Percentile queries use QUERY_WINDOW constant for consistency.
+    Note: Percentile queries are built dynamically using build_promql_queries()
+    with the configured query_window.
     """
     
     # Pod Requests & Limits
@@ -261,7 +276,7 @@ def fetch_pod_metrics(prom_url: str) -> Dict[str, Any]:
         if ns and pod and node:
             pod_to_node[(ns, pod)] = node
     
-    # Build queries with configured QUERY_WINDOW
+    # Build queries with configured query_window
     queries = build_promql_queries()
     
     return {
@@ -376,24 +391,25 @@ def fetch_hpa_metrics(prom_url: str) -> Dict[str, Any]:
 # =============================================================================
 # POD_RESIZE Recommendations
 # =============================================================================
-# Known limitation for Phase-1
-MEMORY_PRESSURE_LIMITATION = (
-    "CPU reductions do not yet account for node-level memory pressure. "
-    "Manual review recommended before applying CPU reduction on memory-constrained nodes."
-)
 
 
 def calculate_pod_resize(
     namespace: str,
     pod: str,
     pod_metrics: Dict[str, Any],
-    env: str
+    env: str,
+    pod_config: Dict[str, Any],
+    memory_buckets: List[int]
 ) -> Optional[Dict[str, Any]]:
     """Calculate POD_RESIZE recommendation for a single pod
     
-    TODO: Add node-level memory pressure check before recommending CPU reduction.
-    Design rule: Do NOT reduce CPU if memory is already tight on the node.
-    Currently not enforced - see MEMORY_PRESSURE_LIMITATION.
+    Args:
+        namespace: Pod namespace
+        pod: Pod name
+        pod_metrics: Dict with all pod metrics
+        env: Environment (prod/nonprod)
+        pod_config: Pod threshold config from config.yaml
+        memory_buckets: Pre-computed memory bucket list with buffer
     """
     key = (namespace, pod)
     
@@ -417,32 +433,40 @@ def calculate_pod_resize(
     
     prod = is_prod(env)
     
-    # CPU Request: max(cpu_p99 × 1.20, cpu_floor)
+    # Get thresholds from config
+    cpu_floor = pod_config.get("cpu_floor_prod" if prod else "cpu_floor_nonprod", 0.1 if prod else 0.05)
+    safety_factor = pod_config.get("safety_factor_prod" if prod else "safety_factor_nonprod", 1.15 if prod else 1.10)
+    cpu_request_mult = pod_config.get("cpu_request_multiplier", 1.20)
+    cpu_limit_req_mult = pod_config.get("cpu_limit_request_multiplier", 1.50)
+    cpu_limit_p100_mult = pod_config.get("cpu_limit_p100_multiplier", 1.25)
+    mem_limit_req_mult = pod_config.get("memory_limit_request_multiplier", 1.50)
+    mem_limit_p100_mult = pod_config.get("memory_limit_p100_multiplier", 1.25)
+    change_tolerance = pod_config.get("change_tolerance", 0.10)
+    
+    # CPU Request: max(cpu_p99 × multiplier, cpu_floor)
     # Note: CPU is NOT normalized to buckets
-    cpu_floor = CPU_FLOOR_PROD if prod else CPU_FLOOR_NONPROD
-    cpu_request_new = max(cpu_p99 * CPU_REQUEST_MULTIPLIER, cpu_floor)
+    cpu_request_new = max(cpu_p99 * cpu_request_mult, cpu_floor)
     
     # CPU Limit: max(cpu_request_new × 1.50, cpu_p100 × 1.25)
     cpu_limit_new = max(
-        cpu_request_new * CPU_LIMIT_REQUEST_MULTIPLIER,
-        (cpu_p100 or cpu_p99) * CPU_LIMIT_P100_MULTIPLIER
+        cpu_request_new * cpu_limit_req_mult,
+        (cpu_p100 or cpu_p99) * cpu_limit_p100_mult
     )
     
     # Memory Request: memory_p99 × safety_factor, then normalize to bucket
-    safety_factor = SAFETY_FACTOR_PROD if prod else SAFETY_FACTOR_NONPROD
     memory_request_raw = memory_p99 * safety_factor
-    memory_request_new = normalize_memory_to_bucket(memory_request_raw)
+    memory_request_new = normalize_memory_to_bucket(memory_request_raw, memory_buckets)
     
     # Memory Limit: max(memory_request_new × 1.50, memory_p100 × 1.25)
     # Uses normalized memory request for consistency
     memory_limit_new = max(
-        memory_request_new * MEMORY_LIMIT_REQUEST_MULTIPLIER,
-        (memory_p100 or memory_p99) * MEMORY_LIMIT_P100_MULTIPLIER
+        memory_request_new * mem_limit_req_mult,
+        (memory_p100 or memory_p99) * mem_limit_p100_mult
     )
     
-    # Check if changes are needed (allow 10% tolerance)
-    cpu_req_change = abs((cpu_request_new - (cpu_request_current or cpu_request_new)) / max(cpu_request_new, 0.001)) > 0.1
-    mem_req_change = abs((memory_request_new - (memory_request_current or memory_request_new)) / max(memory_request_new, 1)) > 0.1
+    # Check if changes are needed (use configured tolerance)
+    cpu_req_change = abs((cpu_request_new - (cpu_request_current or cpu_request_new)) / max(cpu_request_new, 0.001)) > change_tolerance
+    mem_req_change = abs((memory_request_new - (memory_request_current or memory_request_new)) / max(memory_request_new, 1)) > change_tolerance
     
     if not cpu_req_change and not mem_req_change:
         return None
@@ -523,6 +547,8 @@ def build_pod_resize_explanation(
 def analyze_pod_resize(
     pod_metrics: Dict[str, Any], 
     env: str,
+    pod_config: Dict[str, Any],
+    memory_buckets: List[int],
     exclude_namespaces: List[str] = None
 ) -> List[Dict[str, Any]]:
     """Generate all POD_RESIZE recommendations
@@ -530,6 +556,8 @@ def analyze_pod_resize(
     Args:
         pod_metrics: Pod metrics from Prometheus
         env: Environment (prod/nonprod)
+        pod_config: Pod threshold config from config.yaml
+        memory_buckets: Pre-computed memory bucket list with buffer
         exclude_namespaces: List of namespaces to skip
     """
     recommendations = []
@@ -544,7 +572,7 @@ def analyze_pod_resize(
         # Skip excluded namespaces
         if namespace in exclude_namespaces:
             continue
-        rec = calculate_pod_resize(namespace, pod, pod_metrics, env)
+        rec = calculate_pod_resize(namespace, pod, pod_metrics, env, pod_config, memory_buckets)
         if rec:
             recommendations.append(rec)
     
@@ -563,7 +591,9 @@ def get_pods_on_node(node_name: str, pod_to_node: Dict[Tuple[str, str], str]) ->
 def calculate_recommended_pod_values(
     pod_key: Tuple[str, str],
     pod_metrics: Dict[str, Any],
-    env: str
+    env: str,
+    pod_config: Dict[str, Any],
+    memory_buckets: List[int]
 ) -> Tuple[float, int]:
     """Calculate recommended CPU and memory values for a pod after POD_RESIZE
     
@@ -573,15 +603,19 @@ def calculate_recommended_pod_values(
     cpu_p99 = pod_metrics["cpu_p99"].get(pod_key, 0) or 0
     memory_p99 = pod_metrics["memory_p99"].get(pod_key, 0) or 0
     
-    # CPU: max(cpu_p99 × 1.20, cpu_floor)
     prod = is_prod(env)
-    cpu_floor = CPU_FLOOR_PROD if prod else CPU_FLOOR_NONPROD
-    cpu_request_new = max(cpu_p99 * CPU_REQUEST_MULTIPLIER, cpu_floor)
+    
+    # Get thresholds from config
+    cpu_floor = pod_config.get("cpu_floor_prod" if prod else "cpu_floor_nonprod", 0.1 if prod else 0.05)
+    safety_factor = pod_config.get("safety_factor_prod" if prod else "safety_factor_nonprod", 1.15 if prod else 1.10)
+    cpu_request_mult = pod_config.get("cpu_request_multiplier", 1.20)
+    
+    # CPU: max(cpu_p99 × multiplier, cpu_floor)
+    cpu_request_new = max(cpu_p99 * cpu_request_mult, cpu_floor)
     
     # Memory: memory_p99 × safety_factor, then normalize to bucket
-    safety_factor = SAFETY_FACTOR_PROD if prod else SAFETY_FACTOR_NONPROD
     memory_request_raw = memory_p99 * safety_factor
-    memory_request_new = normalize_memory_to_bucket(memory_request_raw)
+    memory_request_new = normalize_memory_to_bucket(memory_request_raw, memory_buckets)
     
     return cpu_request_new, memory_request_new
 
@@ -614,7 +648,8 @@ def calculate_consolidation_feasibility(
     total_memory_required: float,
     node_cpu_capacity: float,
     node_memory_capacity: float,
-    current_node_count: int
+    current_node_count: int,
+    usable_capacity_factor: float = 0.80
 ) -> Tuple[int, int, int, bool]:
     """Determine whether node count can be reduced
     
@@ -624,8 +659,8 @@ def calculate_consolidation_feasibility(
     import math
     
     # Usable capacity per node (safe headroom)
-    usable_cpu_per_node = node_cpu_capacity * NODE_USABLE_CAPACITY_FACTOR
-    usable_memory_per_node = node_memory_capacity * NODE_USABLE_CAPACITY_FACTOR
+    usable_cpu_per_node = node_cpu_capacity * usable_capacity_factor
+    usable_memory_per_node = node_memory_capacity * usable_capacity_factor
     
     # Required node count
     required_nodes_cpu = math.ceil(total_cpu_required / usable_cpu_per_node) if usable_cpu_per_node > 0 else current_node_count
@@ -642,7 +677,8 @@ def calculate_shape_imbalance(
     node_cpu_p95: float,
     node_memory_p95: float,
     node_cpu_capacity: float,
-    node_memory_capacity: float
+    node_memory_capacity: float,
+    shape_imbalance_threshold: float = 0.25
 ) -> Tuple[float, float, bool, str]:
     """Detect CPU-heavy or memory-heavy node shapes
     
@@ -654,7 +690,7 @@ def calculate_shape_imbalance(
     memory_pressure = node_memory_p95 / node_memory_capacity if node_memory_capacity > 0 else 0
     
     pressure_diff = abs(cpu_pressure - memory_pressure)
-    is_imbalanced = pressure_diff > NODE_SHAPE_IMBALANCE_THRESHOLD
+    is_imbalanced = pressure_diff > shape_imbalance_threshold
     
     if not is_imbalanced:
         imbalance_direction = "balanced"
@@ -671,7 +707,8 @@ def calculate_smaller_node_strategy(
     avg_pod_memory: float,
     usable_cpu_per_node: float,
     usable_memory_per_node: float,
-    node_efficiency: float
+    node_efficiency: float,
+    moderately_oversized_threshold: float = 0.65
 ) -> Tuple[float, float, bool]:
     """Determine whether smaller nodes would pack workloads better
     
@@ -682,11 +719,11 @@ def calculate_smaller_node_strategy(
     memory_pods_per_node = usable_memory_per_node / avg_pod_memory if avg_pod_memory > 0 else 0
     
     # Recommend smaller nodes if ALL are true:
-    # - node_efficiency < 0.65
+    # - node_efficiency < moderately_oversized threshold
     # - avg pod size is small relative to node capacity (high packing density possible)
     # High packing density = can fit many pods per node
     recommend_smaller_nodes = (
-        node_efficiency < NODE_EFFICIENCY_MODERATELY_OVERSIZED and
+        node_efficiency < moderately_oversized_threshold and
         cpu_pods_per_node > 10 and  # Can fit many pods
         memory_pods_per_node > 10
     )
@@ -698,13 +735,30 @@ def generate_cluster_node_recommendation(
     node_metrics: Dict[str, Any],
     pod_metrics: Dict[str, Any],
     pod_resize_recs: List[Dict[str, Any]],
-    env: str
+    env: str,
+    pod_config: Dict[str, Any],
+    memory_buckets: List[int],
+    thresholds: Dict[str, Any] = None
 ) -> Optional[Dict[str, Any]]:
     """Generate cluster-level NODE_RIGHTSIZE recommendation based on calculations
     
     Node recommendations are based on post pod-resize values.
     Output: direction (up | down | right-size), reason, example, confidence
+    
+    Args:
+        pod_config: Pod threshold config from config.yaml
+        memory_buckets: Pre-computed memory bucket list with buffer
+        thresholds: Dict with cpu_low_pct, cpu_high_pct, memory_low_pct, memory_high_pct
     """
+    thresholds = thresholds or DEFAULT_CONFIG["thresholds"]["node"]
+    cpu_low_pct = thresholds.get("cpu_low_pct", 40) / 100
+    cpu_high_pct = thresholds.get("cpu_high_pct", 75) / 100
+    memory_low_pct = thresholds.get("memory_low_pct", 50) / 100
+    memory_high_pct = thresholds.get("memory_high_pct", 75) / 100
+    usable_capacity_factor = thresholds.get("usable_capacity_factor", 0.80)
+    shape_imbalance_threshold = thresholds.get("shape_imbalance_threshold", 0.25)
+    # Moderately oversized threshold = average of low thresholds
+    moderately_oversized = (cpu_low_pct + memory_low_pct) / 2  # ~ 0.45
     
     # Get all nodes
     nodes = list(node_metrics["cpu_allocatable"].keys())
@@ -747,7 +801,7 @@ def generate_cluster_node_recommendation(
             mem_new = rec_match["recommended"]["memory_request"]
         else:
             # Calculate what the recommended values would be
-            cpu_new, mem_new = calculate_recommended_pod_values(pod_key, pod_metrics, env)
+            cpu_new, mem_new = calculate_recommended_pod_values(pod_key, pod_metrics, env, pod_config, memory_buckets)
         
         pod_recommended[pod_key] = (cpu_new, mem_new)
     
@@ -783,57 +837,71 @@ def generate_cluster_node_recommendation(
     req_nodes_cpu, req_nodes_memory, required_nodes, consolidation_possible = calculate_consolidation_feasibility(
         total_cpu_required, total_memory_required,
         node_cpu_capacity, node_memory_capacity,
-        current_node_count
+        current_node_count, usable_capacity_factor
     )
     
     # Step 4: Shape imbalance
     cpu_pressure, memory_pressure, is_imbalanced, imbalance_direction = calculate_shape_imbalance(
         avg_node_cpu_p95, avg_node_memory_p95,
-        node_cpu_capacity, node_memory_capacity
+        node_cpu_capacity, node_memory_capacity,
+        shape_imbalance_threshold
     )
     
     # Step 5: Smaller node strategy
     avg_pod_cpu = total_cpu_required / len(all_pods) if all_pods else 0
     avg_pod_memory = total_memory_required / len(all_pods) if all_pods else 0
-    usable_cpu_per_node = node_cpu_capacity * NODE_USABLE_CAPACITY_FACTOR
-    usable_memory_per_node = node_memory_capacity * NODE_USABLE_CAPACITY_FACTOR
+    usable_cpu_per_node = node_cpu_capacity * usable_capacity_factor
+    usable_memory_per_node = node_memory_capacity * usable_capacity_factor
     
     cpu_pods_per_node, memory_pods_per_node, recommend_smaller_nodes = calculate_smaller_node_strategy(
         avg_pod_cpu, avg_pod_memory,
         usable_cpu_per_node, usable_memory_per_node,
-        node_efficiency
+        node_efficiency, moderately_oversized
     )
     
-    # Determine direction, reason, confidence
+    # Determine direction, reason, confidence using config thresholds
     direction = None
     reasons = []
     confidence = "low"
     example = ""
     
-    # Efficiency interpretation
-    efficiency_state = ""
-    if node_efficiency < NODE_EFFICIENCY_STRONGLY_OVERSIZED:
-        efficiency_state = "strongly_oversized"
-    elif node_efficiency < NODE_EFFICIENCY_MODERATELY_OVERSIZED:
-        efficiency_state = "moderately_oversized"
-    elif node_efficiency < NODE_EFFICIENCY_RIGHT_SIZED:
-        efficiency_state = "right_sized"
-    else:
-        efficiency_state = "tight"
+    # Use config thresholds for decision logic
+    # cpu_utilization and memory_utilization as percentages for threshold comparison
+    cpu_utilization = cpu_efficiency
+    memory_utilization = memory_efficiency
     
-    # Decision logic
-    if efficiency_state == "tight":
+    # Decision logic per spec:
+    # IF cpu_utilization < cpu_low_pct AND memory_utilization < memory_low_pct → scale down
+    # IF cpu_utilization > cpu_high_pct OR memory_utilization > memory_high_pct → scale up
+    # ELSE → right size
+    
+    if cpu_utilization > cpu_high_pct or memory_utilization > memory_high_pct:
+        # Scale UP - nodes are tight
         direction = "up"
-        reasons.append(f"Nodes are running at {node_efficiency:.0%} efficiency (tight)")
-        confidence = "medium"
-        example = f"Consider adding nodes or using larger instance sizes"
-    elif consolidation_possible and (efficiency_state in ["strongly_oversized", "moderately_oversized"]):
+        reasons.append(f"CPU utilization is {cpu_utilization:.0%} and memory utilization is {memory_utilization:.0%}, indicating nodes are running tight.")
+        confidence = "high" if (cpu_utilization > cpu_high_pct and memory_utilization > memory_high_pct) else "medium"
+        example = "Consider adding nodes or using larger instance sizes"
+    elif cpu_utilization < cpu_low_pct and memory_utilization < memory_low_pct:
+        # Scale DOWN - nodes are oversized
         direction = "down"
-        reasons.append(NODE_STATEMENTS["consolidation"])
-        nodes_saved = current_node_count - required_nodes
-        confidence = "high" if nodes_saved >= 2 else "medium"
-        example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {required_nodes} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes."
+        if consolidation_possible:
+            reasons.append(NODE_STATEMENTS["consolidation"])
+            nodes_saved = current_node_count - required_nodes
+            confidence = "high" if nodes_saved >= 2 else "medium"
+            example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {required_nodes} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes."
+        elif recommend_smaller_nodes:
+            reasons.append(NODE_STATEMENTS["smaller_nodes"])
+            confidence = "medium"
+            smaller_cpu = node_cpu_capacity / 2
+            smaller_mem = node_memory_capacity / 2
+            new_count = required_nodes * 2
+            example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {new_count} × ({smaller_cpu:.0f} CPU, {smaller_mem / (1024**3):.0f} GB) nodes."
+        else:
+            reasons.append(f"CPU utilization is {cpu_utilization:.0%} and memory utilization is {memory_utilization:.0%}, indicating the node is underused.")
+            confidence = "medium"
+            example = "Consider using smaller node sizes"
     elif is_imbalanced:
+        # RIGHT SIZE - shape imbalance
         direction = "right-size"
         reasons.append(NODE_STATEMENTS["shape_imbalance"])
         confidence = "medium"
@@ -841,18 +909,21 @@ def generate_cluster_node_recommendation(
             example = f"Consider node types with less memory relative to CPU (current shape uses {memory_pressure:.0%} memory vs {cpu_pressure:.0%} CPU)"
         else:
             example = f"Consider node types with more memory relative to CPU (current shape uses {memory_pressure:.0%} memory vs {cpu_pressure:.0%} CPU)"
-    elif recommend_smaller_nodes and efficiency_state in ["strongly_oversized", "moderately_oversized"]:
-        direction = "down"
-        reasons.append(NODE_STATEMENTS["smaller_nodes"])
-        confidence = "medium"
-        smaller_cpu = node_cpu_capacity / 2
-        smaller_mem = node_memory_capacity / 2
-        new_count = required_nodes * 2
-        example = f"Replace {current_node_count} × ({node_cpu_capacity:.0f} CPU, {node_memory_capacity / (1024**3):.0f} GB) nodes with {new_count} × ({smaller_cpu:.0f} CPU, {smaller_mem / (1024**3):.0f} GB) nodes."
     
-    # No recommendation if already right-sized
+    # No recommendation if already right-sized (within acceptable range)
     if not direction:
         return None
+    
+    # Efficiency state for reporting
+    efficiency_state = ""
+    if node_efficiency < cpu_low_pct:
+        efficiency_state = "strongly_oversized"
+    elif node_efficiency < memory_low_pct:
+        efficiency_state = "moderately_oversized"
+    elif node_efficiency < cpu_high_pct:
+        efficiency_state = "right_sized"
+    else:
+        efficiency_state = "tight"
     
     return {
         "type": "NODE_RIGHTSIZE",
@@ -900,16 +971,30 @@ def analyze_node_rightsize(
     node_metrics: Dict[str, Any],
     pod_metrics: Dict[str, Any],
     pod_resize_recs: List[Dict[str, Any]],
-    env: str
+    env: str,
+    pod_config: Dict[str, Any],
+    memory_buckets: List[int],
+    thresholds: Dict[str, Any] = None
 ) -> List[Dict[str, Any]]:
     """Generate NODE_RIGHTSIZE recommendations
     
     Returns a single cluster-level recommendation based on calculations.
+    
+    Args:
+        node_metrics: Node metrics from Prometheus
+        pod_metrics: Pod metrics from Prometheus
+        pod_resize_recs: POD_RESIZE recommendations (for post-resize values)
+        env: Environment (prod/nonprod)
+        pod_config: Pod threshold config from config.yaml
+        memory_buckets: Pre-computed memory bucket list with buffer
+        thresholds: Node thresholds (cpu_low_pct, cpu_high_pct, etc.)
     """
     recommendations = []
+    thresholds = thresholds or DEFAULT_CONFIG["thresholds"]["node"]
     
     rec = generate_cluster_node_recommendation(
-        node_metrics, pod_metrics, pod_resize_recs, env
+        node_metrics, pod_metrics, pod_resize_recs, env,
+        pod_config, memory_buckets, thresholds
     )
     if rec:
         recommendations.append(rec)
@@ -921,34 +1006,28 @@ def analyze_node_rightsize(
 # HPA_MISALIGNMENT Detection
 # =============================================================================
 
-# Standard advisory statements (use exact wording per spec)
-HPA_STATEMENTS = {
-    "min_replicas": "Consider reducing the minimum replica count if sustained usage remains low.",
-    "max_replicas": "Consider lowering the maximum replica count if peak scaling is rarely reached.",
-    "cpu_based": "HPA may be scaling based on CPU requests that are higher than actual usage.",
-    "memory_bound": "Workload appears memory-bound, but HPA is configured to scale on CPU.",
-}
-
-# Required limitations (added to global limitations, not per-HPA)
-HPA_LIMITATIONS = [
-    "HPA analysis is heuristic and based on naming conventions.",
-    "HPA evaluation considers only CPU and memory metrics.",
-    "Custom or external metrics are not analyzed.",
-    "Validate HPA changes with application owners before applying.",
-]
-
 
 def detect_hpa_misalignment(
     hpa_metrics: Dict[str, Any],
     pod_metrics: Dict[str, Any],
-    env: str
+    env: str,
+    thresholds: Dict[str, Any] = None
 ) -> List[Dict[str, Any]]:
     """Detect HPA misalignment issues
     
     Uses heuristic pod matching (HPA target name as substring of pod name).
     Generates advisory recommendations only - no automatic changes.
+    
+    Args:
+        thresholds: Dict with cpu_low_util_pct, cpu_very_low_util_pct, memory_high_util_pct
     """
     recommendations = []
+    thresholds = thresholds or DEFAULT_CONFIG["thresholds"]["hpa"]
+    
+    # Convert percentage thresholds to ratios
+    cpu_low_util = thresholds.get("cpu_low_util_pct", 40) / 100
+    cpu_very_low_util = thresholds.get("cpu_very_low_util_pct", 30) / 100
+    memory_high_util = thresholds.get("memory_high_util_pct", 85) / 100
     
     # Parse HPA info to get target deployments
     hpa_targets = {}
@@ -1004,23 +1083,24 @@ def detect_hpa_misalignment(
         # Collect advisory statements (not reasons)
         advisory_statements = []
         
-        # Rule 1: CPU-based HPA with low CPU usage
-        if avg_cpu_request > 0 and avg_cpu_usage / avg_cpu_request < LOW_CPU_USAGE_RATIO:
+        # Rule 1: CPU-based HPA with low CPU usage (cpu_p95 < cpu_low_util_pct% of cpu_request)
+        if avg_cpu_request > 0 and avg_cpu_usage / avg_cpu_request < cpu_low_util:
             advisory_statements.append(HPA_STATEMENTS["cpu_based"])
         
         # Rule 2: Memory-bound workload with CPU HPA
+        # memory_p95 >= memory_high_util_pct% AND cpu_p95 < cpu_low_util_pct%
         if avg_memory_request > 0 and avg_cpu_request > 0:
             memory_ratio = avg_memory_p95 / avg_memory_request if avg_memory_request > 0 else 0
             cpu_ratio = avg_cpu_usage / avg_cpu_request if avg_cpu_request > 0 else 0
-            if memory_ratio > HIGH_MEMORY_PRESSURE_RATIO and cpu_ratio < LOW_CPU_USAGE_RATIO:
+            if memory_ratio >= memory_high_util and cpu_ratio < cpu_low_util:
                 advisory_statements.append(HPA_STATEMENTS["memory_bound"])
         
-        # Rule 3: minReplicas blocking consolidation
+        # Rule 3: minReplicas blocking consolidation (minReplicas > 1 AND avg_cpu < cpu_very_low_util_pct%)
         if min_replicas > 2 and current_replicas == min_replicas:
             avg_utilization = 0
             if avg_cpu_request > 0:
                 avg_utilization = avg_cpu_usage / avg_cpu_request
-            if avg_utilization < 0.3:  # Low utilization
+            if avg_utilization < cpu_very_low_util:
                 advisory_statements.append(HPA_STATEMENTS["min_replicas"])
         
         # Rule 4: maxReplicas rarely reached (if current is always at min)
@@ -1072,8 +1152,9 @@ def generate_output(
     env: str,
     project: str,
     recommendations: List[Dict[str, Any]],
-    limitations: List[str],
-    totals: Dict[str, int]
+    limitations_text: str,
+    totals: Dict[str, int],
+    query_window: str = None
 ) -> Dict[str, Any]:
     """Generate analysis output JSON
     
@@ -1082,23 +1163,11 @@ def generate_output(
         env: Environment (prod/nonprod)
         project: Project identifier
         recommendations: List of all recommendations
-        limitations: List of limitation messages
+        limitations_text: Single consolidated limitations text from config
         totals: Dict with total counts of scanned entities (pods, nodes, hpas)
+        query_window: Analysis window (e.g., "7d")
     """
-    # Add global limitations
-    all_limitations = limitations.copy()
-    
-    # Check if any POD_RESIZE recommendations exist - add memory pressure limitation
-    if any(r["type"] == "POD_RESIZE" for r in recommendations):
-        all_limitations.append(MEMORY_PRESSURE_LIMITATION)
-    
-    # Add HPA limitations if any HPA recommendations exist
-    if any(r["type"] == "HPA_MISALIGNMENT" for r in recommendations):
-        all_limitations.extend(HPA_LIMITATIONS)
-    
-    # Add node limitations if any NODE_RIGHTSIZE recommendations exist
-    if any(r["type"] == "NODE_RIGHTSIZE" for r in recommendations):
-        all_limitations.extend(NODE_LIMITATIONS)
+    query_window = query_window or DEFAULT_CONFIG["settings"]["query_window"]
     
     # Calculate affected counts
     pod_resize_recs = [r for r in recommendations if r["type"] == "POD_RESIZE"]
@@ -1140,9 +1209,9 @@ def generate_output(
         "env": "prod" if is_prod(env) else "nonprod",
         "project": project,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "analysis_window": QUERY_WINDOW,  # e.g., "7d" - how many days of data used
+        "analysis_window": query_window,
         "recommendations": recommendations,
-        "limitations": all_limitations,
+        "limitations": limitations_text,
         "summary": {
             "total_recommendations": len(recommendations),
             "pods": {
@@ -1193,21 +1262,34 @@ def write_output(output: Dict[str, Any], project: str, env: str) -> str:
 # =============================================================================
 def analyze_cluster(
     cluster_name: str,
-    cluster_config: Dict[str, Any]
+    cluster_config: Dict[str, Any],
+    global_config: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Run complete analysis for a single cluster"""
+    """Run complete analysis for a single cluster
+    
+    Args:
+        cluster_name: Name of the cluster
+        cluster_config: Cluster configuration from YAML
+        global_config: Global config with settings, pod, memory_buckets, thresholds, limitations_text
+    """
     env = cluster_config.get("env", "nonprod")
     project = cluster_config.get("project", "unknown")
     prom_url = cluster_config.get("prom_url", "http://localhost:9090")
     owner_email = cluster_config.get("owner_email", [])
     exclude_namespaces = cluster_config.get("exclude_namespaces", [])
     
+    # Get config sections
+    settings = global_config.get("settings", DEFAULT_CONFIG["settings"])
+    pod_config = global_config.get("pod", DEFAULT_CONFIG["pod"])
+    memory_buckets = global_config.get("memory_buckets", build_memory_buckets(global_config))
+    thresholds = global_config.get("thresholds", DEFAULT_CONFIG["thresholds"])
+    limitations_text = global_config.get("limitations_text", DEFAULT_CONFIG["limitations_text"])
+    query_window = settings.get("query_window", "7d")
+    
     logger.info(f"Analyzing cluster: {cluster_name} (env={env}, project={project})")
     logger.info(f"Prometheus URL: {prom_url}")
     if exclude_namespaces:
         logger.info(f"Excluding namespaces: {exclude_namespaces}")
-    
-    limitations = []
     
     # Fetch all metrics
     try:
@@ -1215,7 +1297,6 @@ def analyze_cluster(
         logger.info(f"Fetched metrics for {len(pod_metrics.get('cpu_requests', {}))} pods")
     except Exception as e:
         logger.error(f"Failed to fetch pod metrics: {e}")
-        limitations.append(f"Pod metrics unavailable: {e}")
         pod_metrics = {k: {} for k in [
             "cpu_requests", "memory_requests", "cpu_limits", "memory_limits",
             "cpu_p95", "cpu_p99", "cpu_p100", "memory_p95", "memory_p99", "memory_p100",
@@ -1227,7 +1308,6 @@ def analyze_cluster(
         logger.info(f"Fetched metrics for {len(node_metrics.get('cpu_allocatable', {}))} nodes")
     except Exception as e:
         logger.error(f"Failed to fetch node metrics: {e}")
-        limitations.append(f"Node metrics unavailable: {e}")
         node_metrics = {
             "cpu_allocatable": {}, "memory_allocatable": {},
             "cpu_usage": {}, "memory_usage": {},
@@ -1239,7 +1319,6 @@ def analyze_cluster(
         logger.info(f"Fetched metrics for {len(hpa_metrics.get('min_replicas', {}))} HPAs")
     except Exception as e:
         logger.error(f"Failed to fetch HPA metrics: {e}")
-        limitations.append(f"HPA metrics unavailable: {e}")
         hpa_metrics = {
             "min_replicas": {}, "max_replicas": {},
             "current_replicas": {}, "desired_replicas": {},
@@ -1249,18 +1328,23 @@ def analyze_cluster(
     # Generate recommendations
     recommendations = []
     
-    # POD_RESIZE
-    pod_resize_recs = analyze_pod_resize(pod_metrics, env, exclude_namespaces)
+    # POD_RESIZE (uses pod_config and memory_buckets)
+    pod_resize_recs = analyze_pod_resize(pod_metrics, env, pod_config, memory_buckets, exclude_namespaces)
     recommendations.extend(pod_resize_recs)
     logger.info(f"Generated {len(pod_resize_recs)} POD_RESIZE recommendations")
     
-    # NODE_RIGHTSIZE (uses post-resize pod values)
-    node_rightsize_recs = analyze_node_rightsize(node_metrics, pod_metrics, pod_resize_recs, env)
+    # NODE_RIGHTSIZE (uses post-resize pod values and thresholds)
+    node_thresholds = thresholds.get("node", DEFAULT_CONFIG["thresholds"]["node"])
+    node_rightsize_recs = analyze_node_rightsize(
+        node_metrics, pod_metrics, pod_resize_recs, env,
+        pod_config, memory_buckets, node_thresholds
+    )
     recommendations.extend(node_rightsize_recs)
     logger.info(f"Generated {len(node_rightsize_recs)} NODE_RIGHTSIZE recommendations")
     
-    # HPA_MISALIGNMENT
-    hpa_misalignment_recs = detect_hpa_misalignment(hpa_metrics, pod_metrics, env)
+    # HPA_MISALIGNMENT (uses thresholds)
+    hpa_thresholds = thresholds.get("hpa", DEFAULT_CONFIG["thresholds"]["hpa"])
+    hpa_misalignment_recs = detect_hpa_misalignment(hpa_metrics, pod_metrics, env, hpa_thresholds)
     recommendations.extend(hpa_misalignment_recs)
     logger.info(f"Generated {len(hpa_misalignment_recs)} HPA_MISALIGNMENT recommendations")
     
@@ -1272,7 +1356,10 @@ def analyze_cluster(
     }
     
     # Generate output
-    output = generate_output(cluster_name, env, project, recommendations, limitations, totals)
+    output = generate_output(
+        cluster_name, env, project, recommendations,
+        limitations_text, totals, query_window
+    )
     
     # Write output
     output_path = write_output(output, project, env)
@@ -1310,7 +1397,24 @@ def main(config_path: str = "clusters.yaml") -> int:
         logger.error("No clusters defined in configuration")
         return 1
     
+    # Build global config by merging defaults with config file values
+    global_config = {
+        "settings": {**DEFAULT_CONFIG["settings"], **config.get("settings", {})},
+        "pod": {**DEFAULT_CONFIG["pod"], **config.get("pod", {})},
+        "memory_buckets_mi": config.get("memory_buckets_mi", DEFAULT_CONFIG["memory_buckets_mi"]),
+        "memory_buffer_factor": config.get("memory_buffer_factor", DEFAULT_CONFIG["memory_buffer_factor"]),
+        "thresholds": {
+            "node": {**DEFAULT_CONFIG["thresholds"]["node"], **config.get("thresholds", {}).get("node", {})},
+            "hpa": {**DEFAULT_CONFIG["thresholds"]["hpa"], **config.get("thresholds", {}).get("hpa", {})},
+        },
+        "limitations_text": config.get("limitations_text", DEFAULT_CONFIG["limitations_text"]),
+    }
+    
+    # Pre-build memory buckets
+    global_config["memory_buckets"] = build_memory_buckets(global_config)
+    
     logger.info(f"Found {len(clusters)} cluster(s) to analyze")
+    logger.info(f"Query window: {global_config['settings']['query_window']}")
     
     # Process each cluster
     success_count = 0
@@ -1319,7 +1423,17 @@ def main(config_path: str = "clusters.yaml") -> int:
     for cluster_name, cluster_config in clusters.items():
         logger.info("-" * 60)
         try:
-            analyze_cluster(cluster_name, cluster_config)
+            # Merge cluster-specific config with global
+            cluster_global_config = {**global_config}
+            
+            # Cluster-specific threshold overrides
+            if "thresholds" in cluster_config:
+                cluster_global_config["thresholds"] = {
+                    "node": {**global_config["thresholds"]["node"], **cluster_config.get("thresholds", {}).get("node", {})},
+                    "hpa": {**global_config["thresholds"]["hpa"], **cluster_config.get("thresholds", {}).get("hpa", {})},
+                }
+            
+            analyze_cluster(cluster_name, cluster_config, cluster_global_config)
             success_count += 1
         except Exception as e:
             logger.error(f"Analysis failed for {cluster_name}: {e}")

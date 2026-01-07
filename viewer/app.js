@@ -607,19 +607,24 @@ function renderHPAMisalignment() {
  * Render limitations section (always visible)
  */
 function renderLimitations() {
-    const limitations = currentData.limitations || [];
+    const limitations = currentData.limitations;
 
-    if (limitations.length === 0) {
+    if (!limitations || limitations.length === 0) {
         limitationsContent.innerHTML = '<p class="empty-state">No limitations reported.</p>';
         return;
     }
 
-    let html = '';
-    for (const lim of limitations) {
-        html += `<div class="limitation-item">${esc(lim)}</div>`;
+    // Handle both string (new format) and array (legacy format)
+    if (typeof limitations === 'string') {
+        // Use pre-wrap to preserve newlines in the limitation text
+        limitationsContent.innerHTML = `<div class="limitation-item" style="white-space: pre-wrap;">${esc(limitations)}</div>`;
+    } else if (Array.isArray(limitations)) {
+        let html = '';
+        for (const lim of limitations) {
+            html += `<div class="limitation-item">${esc(lim)}</div>`;
+        }
+        limitationsContent.innerHTML = html;
     }
-
-    limitationsContent.innerHTML = html;
 }
 
 // =============================================================================
