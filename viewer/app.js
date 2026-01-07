@@ -214,9 +214,30 @@ function renderHeader() {
  */
 function renderSummary() {
     const summary = currentData.summary || {};
-    podResizeCount.textContent = summary.pod_resize_count || 0;
-    nodeRightsizeCount.textContent = summary.node_rightsize_count || 0;
-    hpaMisalignmentCount.textContent = summary.hpa_misalignment_count || 0;
+    
+    // Support both new format (pods.affected) and legacy format (pod_resize_count)
+    const podAffected = summary.pods?.affected ?? summary.pod_resize_count ?? 0;
+    const nodeAffected = summary.nodes?.affected ?? summary.node_rightsize_count ?? 0;
+    const hpaAffected = summary.hpa?.affected ?? summary.hpa_misalignment_count ?? 0;
+    
+    podResizeCount.textContent = podAffected;
+    nodeRightsizeCount.textContent = nodeAffected;
+    hpaMisalignmentCount.textContent = hpaAffected;
+    
+    // Update summary text if available (new format)
+    const podSummaryText = document.getElementById('pod-summary-text');
+    const nodeSummaryText = document.getElementById('node-summary-text');
+    const hpaSummaryText = document.getElementById('hpa-summary-text');
+    
+    if (podSummaryText && summary.pods?.text) {
+        podSummaryText.textContent = summary.pods.text;
+    }
+    if (nodeSummaryText && summary.nodes?.text) {
+        nodeSummaryText.textContent = summary.nodes.text;
+    }
+    if (hpaSummaryText && summary.hpa?.text) {
+        hpaSummaryText.textContent = summary.hpa.text;
+    }
 }
 
 /**
@@ -299,6 +320,15 @@ function renderNodeRightsize() {
         const fragmentation = rec.metrics?.cpu_fragmentation_undefined 
             ? 'N/A' 
             : formatPercent(rec.metrics?.cpu_fragmentation);
+        
+        // Support both new format (memory_allocatable.gb) and legacy (memory_allocatable_bytes)
+        const memAllocatable = rec.metrics?.memory_allocatable?.gb 
+            ? `${rec.metrics.memory_allocatable.gb} GB`
+            : formatMemory(rec.metrics?.memory_allocatable_bytes);
+        
+        // Get recommendation action/meaning if available (new format)
+        const action = rec.recommendation?.action || rec.direction?.toUpperCase();
+        const meaning = rec.recommendation?.meaning || '';
 
         html += `
             <div class="rec-card">
@@ -307,8 +337,9 @@ function renderNodeRightsize() {
                         <div class="rec-card-title">${esc(rec.node)}</div>
                         <div class="rec-card-subtitle">Node</div>
                     </div>
-                    <span class="rec-badge ${badgeClass}">${esc(rec.direction)}</span>
+                    <span class="rec-badge ${badgeClass}">${esc(action)}</span>
                 </div>
+                ${meaning ? `<div class="rec-meaning">${esc(meaning)}</div>` : ''}
                 <div class="data-grid">
                     <div class="data-item">
                         <span class="data-label">CPU Fragmentation</span>
@@ -325,6 +356,10 @@ function renderNodeRightsize() {
                     <div class="data-item">
                         <span class="data-label">CPU Allocatable</span>
                         <span class="data-value">${rec.metrics?.cpu_allocatable ?? '--'} cores</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">Memory Allocatable</span>
+                        <span class="data-value">${memAllocatable}</span>
                     </div>
                 </div>
                 <div class="explanation">${esc(rec.explanation)}</div>

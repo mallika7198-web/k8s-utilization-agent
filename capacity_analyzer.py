@@ -53,6 +53,26 @@ HIGH_FRAGMENTATION_THRESHOLD = 0.5
 LOW_CPU_USAGE_RATIO = 0.2  # avg << request
 HIGH_MEMORY_PRESSURE_RATIO = 0.9  # memory_p95 ≈ request
 
+# Node recommendation actions (standardized)
+NODE_ACTIONS = {
+    "down": {
+        "action": "DOWNSIZE_NODE",
+        "meaning": "Node is underutilized and can be replaced with a smaller instance to reduce cost"
+    },
+    "right-size": {
+        "action": "RIGHT_SIZE_NODE",
+        "meaning": "Node has high fragmentation; consider rebalancing workloads or switching to a different instance type"
+    },
+    "consolidate": {
+        "action": "CONSOLIDATE_NODE",
+        "meaning": "Workloads can be moved to other nodes; this node may be removable"
+    },
+    "none": {
+        "action": "NO_ACTION",
+        "meaning": "Node is healthy and appropriately sized"
+    }
+}
+
 
 # =============================================================================
 # Configuration Loading
@@ -552,16 +572,29 @@ def calculate_node_rightsize(
     else:
         direction = "down"
     
+    # Get standardized recommendation with action and meaning
+    recommendation_info = NODE_ACTIONS.get(direction, NODE_ACTIONS["none"])
+    
     result = {
         "type": "NODE_RIGHTSIZE",
         "node": node_name,
-        "direction": direction,
+        "direction": direction,  # Keep for backward compatibility
+        "recommendation": {
+            "action": recommendation_info["action"],
+            "meaning": recommendation_info["meaning"]
+        },
         "metrics": {
             "cpu_allocatable": round(cpu_allocatable, 2),
-            "memory_allocatable_bytes": int(memory_allocatable),
+            "memory_allocatable": {
+                "bytes": int(memory_allocatable),
+                "gb": round(memory_allocatable / (1024 ** 3), 1)
+            },
             "cpu_fragmentation": round(cpu_fragmentation, 3) if not cpu_fragmentation_undefined else None,
             "cpu_fragmentation_undefined": cpu_fragmentation_undefined,
-            "free_memory_bytes": int(free_memory),
+            "free_memory": {
+                "bytes": int(free_memory),
+                "gb": round(free_memory / (1024 ** 3), 1)
+            },
             "node_efficiency": round(node_efficiency, 3),
             "pods_on_node": len(pods_on_node),
             "total_pod_cpu_request_on_node": round(total_pod_cpu_request_on_node, 4),
@@ -761,9 +794,19 @@ def generate_output(
     env: str,
     project: str,
     recommendations: List[Dict[str, Any]],
-    limitations: List[str]
+    limitations: List[str],
+    totals: Dict[str, int]
 ) -> Dict[str, Any]:
-    """Generate analysis output JSON"""
+    """Generate analysis output JSON
+    
+    Args:
+        cluster_name: Name of the cluster being analyzed
+        env: Environment (prod/nonprod)
+        project: Project identifier
+        recommendations: List of all recommendations
+        limitations: List of limitation messages
+        totals: Dict with total counts of scanned entities (pods, nodes, hpas)
+    """
     # Add global limitations
     all_limitations = limitations.copy()
     
@@ -776,6 +819,16 @@ def generate_output(
         if rec["type"] == "NODE_RIGHTSIZE" and rec.get("limitation"):
             all_limitations.append(rec["limitation"])
     
+    # Calculate affected counts
+    pod_resize_count = len([r for r in recommendations if r["type"] == "POD_RESIZE"])
+    node_rightsize_count = len([r for r in recommendations if r["type"] == "NODE_RIGHTSIZE"])
+    hpa_misalignment_count = len([r for r in recommendations if r["type"] == "HPA_MISALIGNMENT"])
+    
+    # Get totals (scanned entities)
+    total_pods = totals.get("pods", 0)
+    total_nodes = totals.get("nodes", 0)
+    total_hpas = totals.get("hpas", 0)
+    
     return {
         "cluster": cluster_name,
         "env": "prod" if is_prod(env) else "nonprod",
@@ -785,9 +838,25 @@ def generate_output(
         "limitations": all_limitations,
         "summary": {
             "total_recommendations": len(recommendations),
-            "pod_resize_count": len([r for r in recommendations if r["type"] == "POD_RESIZE"]),
-            "node_rightsize_count": len([r for r in recommendations if r["type"] == "NODE_RIGHTSIZE"]),
-            "hpa_misalignment_count": len([r for r in recommendations if r["type"] == "HPA_MISALIGNMENT"]),
+            "pods": {
+                "affected": pod_resize_count,
+                "total": total_pods,
+                "text": f"{pod_resize_count} out of {total_pods} pods need resizing" if total_pods > 0 else "No pods scanned"
+            },
+            "nodes": {
+                "affected": node_rightsize_count,
+                "total": total_nodes,
+                "text": f"{node_rightsize_count} out of {total_nodes} nodes show inefficiency" if total_nodes > 0 else "No nodes scanned"
+            },
+            "hpa": {
+                "affected": hpa_misalignment_count,
+                "total": total_hpas,
+                "text": f"{hpa_misalignment_count} out of {total_hpas} HPAs are misaligned" if total_hpas > 0 else "No HPAs scanned"
+            },
+            # Keep legacy fields for backward compatibility
+            "pod_resize_count": pod_resize_count,
+            "node_rightsize_count": node_rightsize_count,
+            "hpa_misalignment_count": hpa_misalignment_count,
         },
     }
 
@@ -878,8 +947,15 @@ def analyze_cluster(
     recommendations.extend(hpa_misalignment_recs)
     logger.info(f"Generated {len(hpa_misalignment_recs)} HPA_MISALIGNMENT recommendations")
     
+    # Calculate totals for summary (scanned entities, not just affected)
+    totals = {
+        "pods": len(pod_metrics.get("cpu_requests", {})),
+        "nodes": len(node_metrics.get("cpu_allocatable", {})),
+        "hpas": len(hpa_metrics.get("min_replicas", {})),
+    }
+    
     # Generate output
-    output = generate_output(cluster_name, env, project, recommendations, limitations)
+    output = generate_output(cluster_name, env, project, recommendations, limitations, totals)
     
     # Write output
     output_path = write_output(output, project, env)
